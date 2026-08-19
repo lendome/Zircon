@@ -44,3 +44,4 @@ sandbox/tmp/
 # === Secrets / local-only ===
 SECURITY_VULNERABILITIES.md
 models.yaml
+AGENTS.md

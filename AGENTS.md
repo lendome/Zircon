@@ -31,7 +31,7 @@ Each step is one of: `explore`, `edit`, `verify`, `research`.
 | Path | Purpose |
 |------|---------|
 | `AGENTS.md` | This file — agent's internal manual |
-| `cli.py` | CLI entry point |
+| `cli/` | Primary CLI entry point and terminal UI |
 | `core/` | Core engine: agent, context, planning, execution, knowledge graph |
 | `subagents/` | Specialised sub-agents (explorer, editor, verifier, architect, researcher) |
 | `subagents/swarm/` | Swarm mode agents (API builder, frontend builder, backend builder, coordinator, integration) |

@@ -2,9 +2,11 @@
 
 Python 3.10+ | Coding, research, and security testing assistant | v1.0
 
-Zircon is an AI assistant for working in real codebases. It can inspect a project, explain how parts fit together, make changes, run checks, and keep track of longer conversations through saved sessions.
+Zircon is a capable AI coding and research agent for working in real codebases. It is designed to take a task from investigation through implementation and verification, while keeping the project context, tool results, and conversation available as the work develops.
 
-It is intended to be useful without pretending to be perfect. Zircon can make mistakes, misunderstand a request, or choose an approach you would not choose. Review changes before you keep them, especially when working with important code, production systems, or sensitive data.
+Zircon is built for practical software work rather than isolated code snippets. It can navigate unfamiliar repositories, reason across multiple files, use the shell and development tools, make structured edits, run verification, and continue from saved sessions. It is designed to give the underlying model the context and capabilities it needs to complete substantial tasks efficiently.
+
+As with any tool that can change a codebase, review the resulting diff and verification output before merging or deploying changes. This is a normal part of using an engineering tool with meaningful access, not a substitute for the agent's own checks.
 
 ## What It Does
 
@@ -19,7 +21,7 @@ Zircon can help with tasks such as:
 - Checking syntax and reviewing the result of edits.
 - Keeping a durable transcript that you can reopen later.
 
-The assistant works through tools that can read and write files, search the project, run commands, inspect Git state, and access configured web services. You decide which workspace it runs in and which providers it can use.
+The assistant works through an integrated toolset for reading and writing files, searching the project, navigating symbols, running commands, inspecting Git state, checking changes, and accessing configured web services. You choose the workspace and providers, while Zircon manages the task flow and keeps the relevant context available to the agent.
 
 ## Getting Started
 
@@ -40,8 +42,8 @@ python -m zirconAgent.cli
 Or install the `zircon` command:
 
 ```bash
-./install_cli.sh        # macOS and Linux
-install_cli.bat         # Windows
+bash install.sh     # macOS and Linux
+install.bat         # Windows
 ```
 
 Then open a workspace with:
@@ -55,7 +57,7 @@ The first launch may ask you to choose or configure a provider.
 
 ## The TUI
 
-The terminal interface is the main interactive way to use Zircon. It gives you a prompt for conversations, a command palette, file autocomplete, status information, saved-session browsing, and streaming progress while the assistant works.
+The terminal interface is the main interactive way to use Zircon. It provides a focused workspace for conversations, command discovery, file autocomplete, saved-session browsing, context awareness, and live progress while the agent investigates and works through a task.
 
 Useful controls include:
 
@@ -82,17 +84,17 @@ You can choose a tier when launching Zircon and switch tiers while the TUI is op
 
 ### Fast
 
-Fast is intended for quick questions, small edits, and simple exploration. It uses less planning and a smaller context budget so responses can be quicker and less expensive.
+Fast is optimized for quick questions, small edits, and straightforward exploration. It reduces planning overhead and uses a smaller context budget when speed and cost matter more than extended task coordination.
 
 ### Balanced
 
-Balanced is the default for general development work. It can plan multi-step tasks, use project context, run verification, and keep more conversation history available.
+Balanced is the default for serious day-to-day development work. It plans multi-step tasks when useful, uses repository context, performs verification, and maintains a large conversation window for work that spans files and tools.
 
 Context budget: 128K tokens.
 
 ### Quality
 
-Quality is intended for larger or less familiar changes. It allows more context, deeper planning, additional review, and specialized helper agents when those features are useful.
+Quality is intended for larger, more involved, or less familiar changes. It provides the largest context budget, deeper planning, additional review, and specialized helper agents when those capabilities improve the result.
 
 Context budget: 256K tokens.
 
@@ -147,7 +149,7 @@ The TUI also includes commands such as:
 
 ## How Zircon Works
 
-Zircon combines a conversation with a set of project tools. Depending on the task and selected tier, it may:
+Zircon combines a capable model with a structured task runtime and a set of project tools. Depending on the task and selected tier, it may:
 
 1. Read project structure and relevant files.
 2. Decide whether a plan would help.
@@ -156,7 +158,7 @@ Zircon combines a conversation with a set of project tools. Depending on the tas
 5. Check syntax, tests, builds, or other available evidence.
 6. Explain what it did and what still needs attention.
 
-The project also keeps useful supporting information such as a repository map, working-set files, notes, checkpoints, and session transcripts. Some model context is compacted when a conversation becomes large, but the saved transcript is intended to remain available for later review.
+The project also keeps supporting information such as a repository map, working-set files, notes, checkpoints, and session transcripts. The runtime manages context deliberately, preserving recent working state and compacting older model input when necessary so longer tasks can continue without losing the overall direction of the work. The saved transcript remains available for later review.
 
 ## Running Without The TUI
 
@@ -195,7 +197,7 @@ Optional features may use packages such as local embedding models, Docker, or la
 
 ## Safety And Review
 
-Zircon can read and modify files, execute shell commands, access configured URLs, and interact with Git. Treat it as an assistant with meaningful permissions, not as an unattended deployment system.
+Zircon can read and modify files, execute shell commands, access configured URLs, and interact with Git. These capabilities are what let it complete real engineering tasks instead of only suggesting snippets. Use the normal engineering controls around those permissions, including diffs, tests, checkpoints, and deployment review.
 
 Before accepting a change:
 
