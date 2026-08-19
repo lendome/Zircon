@@ -682,9 +682,8 @@ class ChatComponent:
         if key.startswith("mouse:"):
             self._handle_mouse(key)
             return
-        if not getattr(self, "_mouse_tracking_enabled", True):
-            enable_mouse_tracking()
-            self._mouse_tracking_enabled = True
+        # Native terminal selection remains the default. Application mouse
+        # tracking is enabled only by the explicit prompt-mouse toggle below.
 
         # A pending destructive-command approval is serviced even while a turn
         # is streaming (the stream is blocked awaiting this decision).
@@ -762,6 +761,21 @@ class ChatComponent:
         # Ctrl+P opens command palette
         if key == "ctrl+p":
             self._palette.show()
+            self._render()
+            return
+
+        if key == "ctrl+shift+m":
+            self._mouse_tracking_enabled = not getattr(self, "_mouse_tracking_enabled", False)
+            if self._mouse_tracking_enabled:
+                enable_mouse_tracking()
+                self._toast_mgr.info(
+                    "Prompt mouse selection enabled; Ctrl+Shift+M restores copy mode"
+                )
+            else:
+                disable_mouse_tracking()
+                self._toast_mgr.info(
+                    "Native terminal selection enabled; drag to copy agent output"
+                )
             self._render()
             return
 
@@ -1154,6 +1168,8 @@ class ChatComponent:
 
     def _handle_mouse(self, event: str) -> None:
         """Translate an SGR click/drag over the prompt into text selection."""
+        if not getattr(self, "_mouse_tracking_enabled", False):
+            return
         if (
             getattr(getattr(self, "_palette", None), "is_visible", False)
             or getattr(self, "_model_picker", None) is not None
@@ -1677,7 +1693,7 @@ class ChatComponent:
             style=theme.text_muted.to_rich(),
         )))
         self.console.print(Align.center(Text(
-            "Esc stops the agent | Esc Esc reverts to a checkpoint",
+            "Esc stops the agent | Esc Esc reverts to a checkpoint | Ctrl+Shift+M prompt mouse mode",
             style=f"dim {theme.text_muted.to_rich()}",
         )))
         self.console.print(Align.center(Text(

@@ -57,6 +57,7 @@ def test_mouse_drag_selects_wrapped_prompt_text():
     chat._prompt_origin_row = 5
     chat._prompt_render_width = 8
     chat._mouse_selection_anchor = None
+    chat._mouse_tracking_enabled = True
     chat._is_streaming = SimpleNamespace(get=lambda: False)
     chat._autocomplete = SimpleNamespace(hide=lambda: None)
     chat._palette = SimpleNamespace(is_visible=False)

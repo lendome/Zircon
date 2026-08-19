@@ -9,17 +9,19 @@ from zirconAgent.cli.tui.components.chat import ChatComponent
 def test_wheel_does_not_start_or_change_prompt_selection():
     chat = ChatComponent.__new__(ChatComponent)
     chat._mouse_selection_anchor = None
-    chat._mouse_tracking_enabled = True
+    chat._mouse_tracking_enabled = False
+    chat._pending_approval = None
+    chat._is_streaming = SimpleNamespace(get=lambda: False)
 
     with patch("zirconAgent.cli.tui.components.chat.disable_mouse_tracking") as disable:
         chat._handle_mouse("mouse:wheel_up:0:20:10")
 
     assert chat._mouse_selection_anchor is None
     assert not chat._mouse_tracking_enabled
-    disable.assert_called_once_with()
+    disable.assert_not_called()
 
 
-def test_keyboard_reenables_mouse_tracking_after_native_scroll():
+def test_normal_keyboard_input_keeps_native_selection_mode():
     chat = ChatComponent.__new__(ChatComponent)
     chat._mouse_tracking_enabled = False
     chat._pending_approval = None
@@ -31,6 +33,9 @@ def test_keyboard_reenables_mouse_tracking_after_native_scroll():
     chat._session_picker = None
     chat._reasoning_picker = None
     chat._checkpoint_picker = None
+    chat._autocomplete = SimpleNamespace(is_visible=False)
+    chat._which_key = SimpleNamespace(is_visible=False)
+    chat._keymap = SimpleNamespace(get_key_sequences=lambda name: [], dispatch_key=lambda key: False)
     chat._autocomplete = SimpleNamespace(is_visible=False, hide=lambda: None)
     chat._which_key = SimpleNamespace(is_visible=False)
     chat._keymap = SimpleNamespace(get_key_sequences=lambda name: [], dispatch_key=lambda key: False)
@@ -45,6 +50,30 @@ def test_keyboard_reenables_mouse_tracking_after_native_scroll():
     with patch("zirconAgent.cli.tui.components.chat.enable_mouse_tracking") as enable:
         import asyncio
         asyncio.run(chat._handle_key("x"))
+
+    assert not chat._mouse_tracking_enabled
+    enable.assert_not_called()
+
+
+def test_native_selection_is_default_and_prompt_mode_is_explicit():
+    chat = ChatComponent.__new__(ChatComponent)
+    chat._mouse_tracking_enabled = False
+    chat._pending_approval = None
+    chat._is_streaming = SimpleNamespace(get=lambda: False)
+    chat._toast_mgr = SimpleNamespace(info=lambda message: None)
+    chat._render = lambda: None
+    chat._palette = SimpleNamespace(is_visible=False)
+    chat._model_picker = None
+    chat._session_picker = None
+    chat._reasoning_picker = None
+    chat._checkpoint_picker = None
+    chat._autocomplete = SimpleNamespace(is_visible=False)
+    chat._which_key = SimpleNamespace(is_visible=False)
+    chat._keymap = SimpleNamespace(get_key_sequences=lambda name: [], dispatch_key=lambda key: False)
+
+    with patch("zirconAgent.cli.tui.components.chat.enable_mouse_tracking") as enable:
+        import asyncio
+        asyncio.run(chat._handle_key("ctrl+shift+m"))
 
     assert chat._mouse_tracking_enabled
     enable.assert_called_once_with()

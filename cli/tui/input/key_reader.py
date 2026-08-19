@@ -136,7 +136,10 @@ class RawTerminal:
         # SGR mouse mode reports click/drag coordinates without the 223-column
         # limit of legacy X10 mouse encoding. Button-event tracking (1002)
         # includes drag motion while avoiding a flood of hover events.
-        sys.stdout.write("\x1b[?25l\x1b[?2004h" + _MOUSE_ENABLE)
+        # Leave mouse reporting disabled by default. Native terminal drag
+        # selection is essential for copying agent output; application mouse
+        # tracking and native transcript selection cannot both own a drag.
+        sys.stdout.write("\x1b[?25l\x1b[?2004h" + _MOUSE_DISABLE)
         if _IS_WINDOWS:
             self._win_console = _enable_windows_vt_input()
             _start_vt_input_watchdog()
