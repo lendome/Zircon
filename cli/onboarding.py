@@ -102,6 +102,20 @@ class _Wizard:
         return _PRESETS[self.provider_index]
 
     @property
+    def ordered_models(self) -> list[str]:
+        # The model chosen for the previous role leads the next role's list
+        # (when no filter is active), so Tab re-selects it without searching.
+        models = list(self.filtered_models)
+        if self.query:
+            return models
+        previous = self.assignments.get(_ROLES[self.role_index - 1][0], "") if self.role_index else ""
+        if previous:
+            if previous in models:
+                models.remove(previous)
+            models.insert(0, previous)
+        return models
+
+    @property
     def filtered_models(self) -> list[str]:
         # Model identifiers vary by provider (for example, `claude-opus-4.6`
         # versus `claude/claude-opus-4.6`). Treat whitespace as a fuzzy `%`
@@ -179,7 +193,7 @@ class _Wizard:
 
     def _render_model_picker(self) -> Group:
         role, description = _ROLES[self.role_index]
-        matches = self.filtered_models
+        matches = self.ordered_models
         inherited = self.assignments.get("default", "") if role != "default" else ""
         table = Table.grid(padding=(0, 1))
         table.add_column(width=3)
@@ -209,7 +223,17 @@ class _Wizard:
         table.add_column(style="bright_white")
         for role, _ in _ROLES:
             table.add_row(role, self.assignments[role])
-        return Group(Text("Your provider is connected and every Zircon role has a model.", style="bright_white"), Text(""), table)
+        return Group(
+            Text("Your provider is connected and every Zircon role has a model.", style="bright_white"),
+            Text(""),
+            table,
+            Text(""),
+            Text("After setup, type ", style="bright_white"),
+            Group(
+                Text("zircon", style="bold bright_cyan"),
+                Text(" in any folder's terminal to open the Zircon chat interface for that folder.", style="bright_white"),
+            ),
+        )
 
     @property
     def current_role(self) -> str:
@@ -264,7 +288,7 @@ class _Wizard:
             return
 
         if self.stage == "model":
-            matches = self.filtered_models
+            matches = self.ordered_models
             if key == "up" and matches:
                 self.model_index = (self.model_index - 1) % min(len(matches), 9)
             elif key == "down" and matches:
@@ -354,7 +378,10 @@ async def run_onboarding() -> bool:
     if not await wizard.run():
         return False
     wizard.save()
-    wizard.console.print("[bold bright_cyan]Zircon is configured.[/] Starting your workspace...\n")
+    wizard.console.print(
+        "[bold bright_cyan]Zircon is configured.[/] "
+        "Type [bold bright_cyan]zircon[/] in any folder's terminal to open the Zircon chat interface for that folder.\n"
+    )
     return True
 
 
