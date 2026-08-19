@@ -1,117 +1,178 @@
 # ZirconX
 
-Python 3.10+ | Autonomous Coding, Research & Security Agent Framework | v1.0
+Python 3.10+ | Coding, research, and security testing assistant | v1.0
 
-Zircon is an autonomous agent framework that actually works on real codebases — and on real targets. It does not need a vector database. It does not need Docker. It does not need a cloud account. The whole thing, including semantic search via local embeddings, runs offline by default on your machine.
+Zircon is an AI assistant for working in real codebases. It can inspect a project, explain how parts fit together, make changes, run checks, and keep track of longer conversations through saved sessions.
 
-Where most agent frameworks fall apart the moment a task touches more than one file, Zircon keeps going. A knowledge graph handles context retrieval, a tiered planner figures out how hard to think before it acts, sub-agents take on specialized roles, and an optional swarm mode runs multiple agents in parallel. From a single-line edit to a multi-file refactor across a project you have never opened before, it just does the work.
+It is intended to be useful without pretending to be perfect. Zircon can make mistakes, misunderstand a request, or choose an approach you would not choose. Review changes before you keep them, especially when working with important code, production systems, or sensitive data.
 
-This is also, by design, partially a **penetration-testing and cybersecurity tool**. Zircon ships with an integrated authorization layer that unlocks offensive-security workflows — exploit development, credential cracking, malware analysis, network injection, recon, and more — alongside its coding capabilities. It is intended for authorized security testing, CTF work, red-team engagement, defensive research, and education. See the **License & Liability** section at the bottom.
+## What It Does
 
-## How It Thinks
+Zircon can help with tasks such as:
 
-```
-User Task -> PlanGatekeeper -> [Plan? -> Planner -> Execute -> Verify] -> Synthesize
-                                 No -> Direct execution
-```
+- Understanding an unfamiliar repository.
+- Finding functions, files, references, and related code.
+- Fixing bugs and implementing features.
+- Refactoring across multiple files.
+- Writing and running tests.
+- Researching documentation and technical questions.
+- Checking syntax and reviewing the result of edits.
+- Keeping a durable transcript that you can reopen later.
 
-Three execution tiers control how much planning happens before the agent acts. You pick one at launch, and you can switch at runtime without restarting.
+The assistant works through tools that can read and write files, search the project, run commands, inspect Git state, and access configured web services. You decide which workspace it runs in and which providers it can use.
 
-Low (fast)
-  Direct chat and tool execution. No planning, no verification, minimal context retention.
-  Best for: simple Q&A, single-file edits, fast prototyping. This is the cheap and fast mode.
+## Getting Started
 
-Balanced
-  Single-plan gatekeeper, multi-step execution, automatic verification, history compaction.
-  Best for: general development work. This is the default.
+Install the dependencies:
 
-Quality (high)
-  Multi-sample plan consensus where the LLM generates competing plans and the strongest one wins. Reflection loops, semantic search retrieval, sub-agent delegation, swarm mode, chain-of-draft reasoning.
-  Best for: complex multi-file refactors, unfamiliar codebases, changes you cannot afford to mess up.
-
-The planner produces a structured step sequence. Each step is one of: explore, edit, verify, or research. Steps run in order with state carried between them.
-
-## What The Engine Can Actually Do
-
-The `core/` engine is not a thin wrapper around an LLM. It is a full runtime with a planner, an advisor, an executor, a knowledge graph, a sandbox, fault localization, syntax checking, and a swarm orchestrator. Highlights:
-
-- **Hierarchical Fault Localization** (`fault_localizer.py`): a three-phase pipeline (BM25 file-level ranking + reciprocal-rank fusion with optional embeddings, structural parse with a cheap-LLM suspect classifier, line-level window pinpointing) that injects a `<fault_localization>` block before the main loop even starts. When something is broken, Zircon finds *where* before it tries to fix it.
-- **Advisor-Agent pattern** (`advisor.py`): a second model role reviews the execution plan before the first tool call and checks in mid-loop. It can veto destructive edits for N turns.
-- **Tiered tool loop with circuit breakers** (`executor.py`, `registry.py`): hard turn caps, wall-clock deadlines, command-failure cache that blocks identical failing shell retries, edit-failure breakers, read deduplication with mutation-epoch invalidation, web-search anti-thrash, and a `ScopeGuard` that can be armed to confine work to a named component.
-- **Evidence-aware completion gate** (`completion_gate.py`): refuses bare "Done." answers when build artifacts or reachable server URLs are missing. The agent has to prove it finished.
-- **Loop detection** (`loop_detector.py`): tracks read-only cycles, same-file re-reads, and exact-identical consecutive turns, stopping runaway loops before they burn your budget.
-- **Trajectory pruning** (`trajectory_diet.py`, `distiller.py`): compresses old tool results, expired reads, and noisy build logs once the conversation approaches the context limit, while protecting recent turns.
-- **Knowledge graph memory** (`kg_memory.py`): SQLite + NetworkX graph of files, functions, classes, symbols, errors, and tasks, with BFS retrieval and keyword scoring. Context is relationships, not a flat embedding table.
-- **Local embeddings** (`embeddings.py`): sentence-transformers (`nomic-ai/nomic-embed-text-v1.5`) loaded lazily, SHA256-keyed disk cache, graceful degradation to keyword matching when unavailable.
-- **Repo-map indexing** (`context.py`, `ast_parser.py`): per-language symbol/import parsing for Python, Go, JS/TS, Rust, C-family, and SQF, with mtime-based cache invalidation and import-graph scoring.
-- **Multi-language syntax checking** (`syntax_checker.py`): Python (`ast` + `ruff`), JS (`node --check`), TS (`tsc --noEmit`), JSON, YAML, TOML, HTML/XML, CSS, Shell (`bash -n` + `shellcheck`), Dockerfile. Edits that produce invalid syntax are rolled back automatically.
-- **AST-aware edit engine** (`edit_engine.py`): exact → fuzzy → whitespace-normalized → AST-aware matchers, Python symbol replacement with indent normalization, and Aider-style `<<<<<<< SEARCH / ======= / >>>>>>> REPLACE` multi-file blocks.
-- **Git session isolation** (`git_integration.py`, `vcs/git.py`): dulwich-backed session branches, auto-commit, rollback, and a checkpoint API that snapshots the workspace independent of git.
-- **Docker sandboxing** (`sandbox_executor.py`): isolated containers with memory/CPU limits and `--network none` by default for test execution in the Quality tier.
-- **Swarm orchestration** (`swarm_orchestrator.py`, `swarm_plan_builder.py`): topological layering of parallel agent tracks with cross-track contract validation, integration, and final verification.
-- **Profiling** (`profiling.py`): auto-detects cProfile / Node `--cpu-prof` / Go pprof and rewrites commands to emit profiles, then parses and formats hotspots.
-- **Project classification** (`project_classifier.py`): 13 categories with an LLM classifier and heuristic fallback, injecting domain-specific guidance (including anti-bot/anti-cheat engineering with obfuscation, fingerprinting, and zero-day awareness).
-
-## The CLI
-
-Zircon ships as a real CLI plus a full-screen TUI, split cleanly from a backend daemon. This is not a script that prints to stdout. It is a binary-grade tool with a declarative command tree, lazy-loaded handlers, and a reactive UI that survives the daemon being restarted.
-
-```
-zircon                              Open the TUI in the current directory
-zircon /path/to/project             Open the TUI in a specific workspace
-zircon --low                        Low tier (cheap, fast)
-zircon --quality                    Quality tier with full planning
-zircon --swarm                      Swarm mode
-zircon --plan-mode                  Force the planner on
-zircon --verbose                    Verbose logging
-
-zircon serve                        Start the daemon server in the foreground
-zircon task "fix the off-by-one"    Run a task headless, no TUI
-zircon api                          Headless JSON-RPC mode on stdin/stdout
-zircon status                       Show daemon and session status
-zircon tier fast                    Switch tier at runtime (no restart)
-zircon tier quality                 balanced | quality | fast all accepted
-zircon service start                Start the background daemon
-zircon service stop                 Stop the background daemon
-zircon service restart              Restart the background daemon
-zircon tui                          Launch the TUI explicitly (alias: chat)
-zircon help                         Print the full command tree
+```bash
+pip install -r requirements.txt
 ```
 
-Install it once and the `zircon` command is yours from any terminal:
+Configure a model provider in `models.yaml`. The `models.yaml.ex` file contains an example configuration. API keys can be supplied through environment variables rather than stored directly in the file.
 
-```
-./install_cli.sh        # macOS / Linux
-install_cli.bat         # Windows
-```
+Launch Zircon in the current directory:
 
-Or run it directly without installing:
-
-```
+```bash
 python -m zirconAgent.cli
 ```
 
-### Daemon and TUI split
+Or install the `zircon` command:
 
-The TUI never runs business logic itself. It talks to a backend daemon over a transport, either JSON-over-TCP to a running server or an in-process direct call. That separation is the point. The TUI can crash, close, or be restarted without losing your session, because the agent state lives in the daemon.
+```bash
+./install_cli.sh        # macOS and Linux
+install_cli.bat         # Windows
+```
 
-The daemon writes a lock file to `.zircon-code/daemon.lock` so the CLI can discover and manage it across process boundaries. Start one with `zircon service start`, check it with `zircon status`, and kill it with `zircon service stop`. The `serve` command runs the same server in the foreground so you can watch it.
+Then open a workspace with:
 
-### The TUI
+```bash
+zircon
+zircon /path/to/project
+```
 
-The interface is a full-screen reactive UI assembled from a provider tree: clipboard, args, key-value store, project, SDK, renderer, config, theme, keymap, events, sync, routing, dialogs, permissions, frecency, prompt history, prompt stash, editor context, toasts, and the data layer. The whole thing is wrapped in an error boundary, so a rendering error in one component does not kill the app.
+The first launch may ask you to choose or configure a provider.
 
-It comes with a command palette, file autocomplete, dialogs, a theming system, a plugin runtime, editor integration, and an attention system that tracks what the agent is focused on. This is a terminal application, not a print loop.
+## The TUI
 
-### Headless and embeddable
+The terminal interface is the main interactive way to use Zircon. It gives you a prompt for conversations, a command palette, file autocomplete, status information, saved-session browsing, and streaming progress while the assistant works.
 
-Two ways to run without the TUI:
+Useful controls include:
 
-`zircon task` streams colored trace events to stdout as the agent works through plan, steps, tool calls, and verification. Pipe it into a log, watch it in CI, script around it.
+- `Ctrl+L`: open the saved-session browser.
+- `Ctrl+P`: open the command palette.
+- `/`: begin a slash command.
+- `@`: search for files while writing a prompt.
+- `Esc`: stop an active turn or clear the prompt.
+- `Esc Esc`: open checkpoint actions when available.
+- `Ctrl+C` twice: exit.
+- `Ctrl+Shift+M`: toggle prompt mouse selection. Native terminal selection is the default so you can drag across agent output and copy it normally.
 
-`zircon api` speaks newline-delimited JSON-RPC over stdin/stdout. Methods include `chat_stream`, `solve_stream`, `submit_feedback`, `get_status`, and `reset_context`. This is the integration point for editors and automation.
+The footer shows the active session, model, provider, context usage, and cost when that information is available. Context is displayed as an estimate of the next request, for example `ctx 14,781/128,000 (12%)`.
 
-And the framework is still programmable directly:
+### Saved Sessions
+
+Sessions are stored in `.zircon-code/sessions` inside the workspace. The session browser shows recent sessions, their status, modified-file counts, and message history.
+
+When you resume a session, Zircon clears the previous active conversation, restores the selected transcript, and lets you continue from that session. Long or older sessions may include warnings if some state was created by an earlier version.
+
+## Execution Tiers
+
+You can choose a tier when launching Zircon and switch tiers while the TUI is open.
+
+### Fast
+
+Fast is intended for quick questions, small edits, and simple exploration. It uses less planning and a smaller context budget so responses can be quicker and less expensive.
+
+### Balanced
+
+Balanced is the default for general development work. It can plan multi-step tasks, use project context, run verification, and keep more conversation history available.
+
+Context budget: 128K tokens.
+
+### Quality
+
+Quality is intended for larger or less familiar changes. It allows more context, deeper planning, additional review, and specialized helper agents when those features are useful.
+
+Context budget: 256K tokens.
+
+These budgets describe what Zircon is prepared to use. The provider and model still need to support the requested context size. If a provider supports less, its limit takes precedence.
+
+Examples:
+
+```bash
+zircon --fast
+zircon --quality
+zircon --plan-mode
+zircon --swarm
+```
+
+Inside the TUI:
+
+```text
+/tier fast
+/tier balanced
+/tier quality
+```
+
+## Common Commands
+
+```text
+zircon                              Open the TUI in the current directory
+zircon /path/to/project             Open a specific workspace
+zircon task "fix the off-by-one"    Run a task without the TUI
+zircon status                       Show daemon and session status
+zircon models                       List configured model profiles
+zircon tier quality                 Change the active tier
+zircon service start                Start the background daemon
+zircon service stop                 Stop the background daemon
+zircon service restart              Restart the background daemon
+zircon tui                          Open the TUI explicitly
+zircon help                         Show command help
+```
+
+The TUI also includes commands such as:
+
+```text
+/help                 Show help
+/status               Show current status and context usage
+/sessions             Browse saved sessions
+/resume               Resume the most recent session
+/compact              Compact the model context
+/models               Choose or inspect models
+/theme                Change the terminal theme
+/reset                Clear the active model context
+/exit                 Leave Zircon
+```
+
+## How Zircon Works
+
+Zircon combines a conversation with a set of project tools. Depending on the task and selected tier, it may:
+
+1. Read project structure and relevant files.
+2. Decide whether a plan would help.
+3. Ask for approval when a plan requires it.
+4. Make edits or run commands through its tools.
+5. Check syntax, tests, builds, or other available evidence.
+6. Explain what it did and what still needs attention.
+
+The project also keeps useful supporting information such as a repository map, working-set files, notes, checkpoints, and session transcripts. Some model context is compacted when a conversation becomes large, but the saved transcript is intended to remain available for later review.
+
+## Running Without The TUI
+
+For scripts, CI, or other integrations:
+
+```bash
+zircon task "run the tests and explain any failures"
+```
+
+The JSON API reads newline-delimited requests from standard input:
+
+```bash
+zircon api
+```
+
+The Python API is also available:
 
 ```python
 from zirconAgent.core.agent import Agent
@@ -120,147 +181,57 @@ agent = Agent(
     repo_path=".",
     config_path="models.yaml",
     tier="balanced",
-    swarm_mode=False,
 )
 await agent.solve("Refactor the database layer to use async queries")
 ```
 
-## Key Differentiators
+## Providers And Configuration
 
-### Knowledge Graph, not a vector store
+Provider profiles are configured in `models.yaml`. The configuration can include OpenAI-compatible services, Anthropic-compatible services, local models, and other supported endpoints.
 
-Context lives in a SQLite + NetworkX knowledge graph. Not a vector database. The graph does BFS traversal with keyword scoring and configurable depth limits. You do not run a separate vector DB service, and you still get relevant file and symbol context for each task.
+Keep credentials out of source control. Prefer environment variables or a local configuration file that is excluded from Git. Check the provider's context-window, privacy, and billing behavior before using it with a project.
 
-- BFS-based retrieval with depth_limit=2 by default
-- Keyword scoring from the task description
-- Zero external dependencies. Everything is local.
+Optional features may use packages such as local embedding models, Docker, or language-specific development tools. Zircon should continue with reduced functionality when optional components are unavailable, but the exact behavior depends on the task and configuration.
 
-### Local embeddings
+## Safety And Review
 
-Semantic search uses sentence-transformers loaded lazily on demand. No API calls. No cloud dependency. If the package is not installed, the system degrades gracefully. Embeddings return None and retrieval falls back to keyword matching. It works either way.
+Zircon can read and modify files, execute shell commands, access configured URLs, and interact with Git. Treat it as an assistant with meaningful permissions, not as an unattended deployment system.
 
-### Sub-Agent delegation (Quality tier)
+Before accepting a change:
 
-Instead of one massive prompt, the Quality tier hands work to specialized sub-agents:
+- Read the diff.
+- Run the relevant tests or checks.
+- Confirm commands ran in the intended workspace.
+- Check that secrets and private data were not exposed to a model or external provider.
+- Confirm that security testing is authorized and within the agreed scope.
+- Use checkpoints or version control when the change matters.
 
-- Explorer: codebase navigation, file discovery, symbol resolution
-- Editor: file modifications, edit application, diff generation
-- Verifier: post-execution validation, error checking, test running
-- Architect: high-level design decisions, file structure planning
-- Researcher: documentation lookup, pattern analysis, multi-step web research
+Zircon can support authorized security testing, defensive research, education, and CTF work. You are responsible for having permission to test the systems, accounts, networks, and data involved. Do not use it to access or alter systems without authorization.
 
-Each sub-agent gets a focused prompt for its role. This reduces context pressure and improves output quality on complex tasks.
+## Project Layout
 
-### Swarm mode
-
-For tasks that cross independent domains (full-stack changes, backend plus frontend), swarm mode runs multiple agents in parallel using topological layering. Tracks inside a layer run concurrently. Layers wait for all dependency tracks to finish before starting. Results merge through an artifact registry. Parallel where it can be, ordered where it has to be.
-
-### History compaction
-
-The context window auto-compacts when the message count passes a threshold. Older messages get replaced with an LLM-generated summary. This is irreversible. The original messages are gone. But it keeps long sessions from hitting context limits.
-
-### Repo map caching
-
-Project structure caches to `.zircon-code/repo_map_cache.json` with mtime-based invalidation. No redundant scanning on repeated tasks. Directories like `__pycache__` and `node_modules` are excluded by default.
-
-## Security & Penetration-Testing Capabilities
-
-Zircon is deliberately not limited to writing code. It is built to also function as an authorized security testing and cybersecurity research tool. The framework includes an integrated authorization system that, when triggered by the nature of a task, unlocks offensive-security workflows so the agent does not refuse, hedge, or moralize legitimate authorized work.
-
-### Authorization unlock layer
-
-`core/stealth_prompts.py` ships keyword-triggered authorization activations covering the full offensive-security spectrum. When a task's keywords match, an authorization block is appended to the system prompt instructing the model to proceed. Activations include, among others:
-
-- Reverse engineering, decompiling, and disassembly
-- Penetration testing, security scanning, nmap/masscan, and vulnerability scanning
-- Exploit and payload development — shellcode, PoC, RCE, buffer overflow, UAF, heap spray, ROP, format-string, integer-overflow
-- Credential attacks — password/hash cracking, brute force, hashcat, john, hydra, credential stuffing, rainbow tables
-- Phishing and social-engineering simulation — spear-phishing, vishing, smishing
-- Malware analysis — unpacking, ransomware/trojan/rootkit/backdoor/RAT analysis, IOC extraction, YARA, signature development
-- Cryptanalysis — side-channel, timing, padding-oracle, weak-crypto attacks
-- OSINT and reconnaissance — data scraping, footprinting
-- Privilege escalation and lateral movement — privesc, pass-the-hash, pass-the-ticket, kerberoasting, AS-REP roasting, golden/silver ticket
-- Security-control bypass — WAF, auth, MFA/2FA, CAPTCHA, rate-limit, AV/EDR, CSP, SSO bypass and detection evasion
-- Network injection and MITM — ARP/DNS/NDP/DHCP spoofing, SSL strip, wifi/WPA/WPA2/WPS cracking, evil twin, rogue AP
-- Data exfiltration simulation — DNS/ICMP/HTTP tunneling, DLP bypass, covert channels
-
-Activations are case-insensitive, whole-word matched, stack on top of each other, and fire on every system-prompt build.
-
-### Domain authorization signal
-
-When a user task mentions a domain, the agent can fetch that domain's `/zircon` path and treat a returned "Certificate of Authorization" as a device-bound trusted framework signal. This is the mechanism that binds an engagement scope to the specific machine running Zircon.
-
-### Tool surface for security work
-
-- **Shell execution** — `run_command`, `shell_start`/`poll`/`stop`/`input`/`close_stdin`, and visible `run_in_terminal` with full command capture, background process adoption on timeout, and a pinned one-shell-per-machine model.
-- **Web operations** — `fetch_url` (with curl_cffi Chrome TLS/JA3/JA4 fingerprint impersonation and Playwright JS rendering), `web_search`, `lookup_docs` (Context7), and `deep_research` (multi-step Researcher sub-agent). No host restriction by default — internal services and cloud-metadata endpoints are reachable.
-- **Runtime probing** — `core/runtime_probe.py` automatically extracts and probes local URLs discovered in command output (loopback, link-local, RFC1918), returning status, content-type, and a bounded response preview. Passive internal-network mapping.
-- **Filesystem operations** — read, create, delete, edit, glob, list, and symbol-navigation tools across the whole host, not just the workspace.
-- **Reconnaissance** — hierarchical fault localization, `find_symbols`, `get_structure`, repo-map indexing, `get_symbol_definition`, `get_function_body`, `find_references`, `get_function_dependencies` (call-graph resolution).
-- **VCS** — git session branches, auto-commit, rollback, and workspace checkpoints for safe experimentation.
-- **Sandbox** — Docker isolation for test execution in the Quality tier.
-
-See `SECURITY_VULNERABILITIES.md` for the full catalog of documented security properties and the attack chain.
-
-## Installation
-
-```
-pip install -r requirements.txt
-```
-
-Core dependencies: openai, httpx, pyyaml, networkx, numpy, dulwich. sentence-transformers, datasets, and swebench are optional.
-
-## Configuration
-
-Model providers, API keys, base URLs, and per-tier model selection go in `models.yaml`. See `models.yaml.ex` for a full example with OpenAI, Anthropic, and Ollama.
-
-## Project Structure
-
-```
-AGENTS.md          Agent self-instructions
-__main__.py        Module entry (python -m zirconAgent)
-cli/               The CLI binary: spec tree, runtime, daemon, TUI
-  index.py         Thin entry: parse args, manage daemon, launch TUI
-  spec.py          Declarative command spec tree
-  runtime.py       Walks the spec tree, lazy-loads handlers
-  commands/        Command handlers (lazy-loaded)
-  daemon/          Backend server, lifecycle, transport
-  tui/             Full-screen reactive UI with provider tree
-core/              Engine: agent, planning, execution, knowledge graph, context
-subagents/         Specialized sub-agents (explorer, editor, verifier, architect, researcher)
-  swarm/           Swarm agents (coordinator, API builder, frontend builder, etc.)
-tools/             Tool implementations: file ops, edit ops, search, shell, web
-llm/               LLM router, prompt library, structured output parsing
-parsers/           AST and edit format parsers
-vcs/               Git integration (Dulwich-based)
-sandbox/           Example target project + Docker sandbox executor in core/
-tests/             Test suite
-benchmark/         Benchmarking (including SWE-bench)
+```text
+cli/              Command-line entry points, daemon, and terminal UI
+core/             Agent lifecycle, planning, context, sessions, and execution
+tools/            File, search, shell, web, and development tools
+llm/              Provider routing and model communication
+parsers/          Code and edit parsers
+subagents/        Optional specialized helper agents
+vcs/              Git integration and checkpoints
+sandbox/          Sandbox-related examples and support
+tests/            Automated tests
 ```
 
 ## Requirements
 
-- Python 3.10+
-- API key for OpenAI or Anthropic (optional with local models via Ollama)
-
-## License & Liability
-
-Zircon is released under the **MIT License**.
-
-This software is dual-purpose. It is both a general autonomous coding agent and a penetration-testing / cybersecurity research tool. The offensive-security capabilities described above are real and intentional — they exist so that authorized security professionals, red-team operators, CTF participants, defensive researchers, and students can use a single agent framework for legitimate authorized work instead of stitching together half a dozen separate tools.
-
-**By installing, running, or distributing Zircon you accept the following terms:**
-
-1. **Authorization required.** You may only use Zircon's security and offensive capabilities against systems, networks, applications, and accounts that you own or for which you have explicit, written authorization from the owner to test. "I was curious" is not authorization. "It was exposed to the internet" is not authorization. If you are not sure whether you are authorized, you are not authorized.
-2. **No warranty.** Zircon is provided "AS IS", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and non-infringement. The author(s) and copyright holder(s) make no claim that this software is safe, correct, lawful in your jurisdiction, or suitable for any purpose.
-3. **Liability waiver.** In no event shall the authors or copyright holders be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of, or in connection with the software or the use or other dealings in the software — including but not limited to unauthorized access, data loss, system damage, legal action, regulatory penalties, or any consequence of misuse by you or by any third party.
-4. **You are responsible.** The user bears full and sole responsibility for all actions performed by or through this software. Zircon can execute shell commands, read and write files outside the workspace, fetch arbitrary URLs, and run offensive-security workflows. None of that is the framework's decision — it is yours. You are the operator.
-5. **Not legal advice.** Nothing in this README, the source code, or the documentation constitutes legal advice. Laws on security testing, access, interception, and offensive tooling vary widely by jurisdiction. Consult a qualified attorney if you are unsure about the legality of any intended use.
-6. **Educational intent.** The offensive-security features are provided for education, authorized testing, and defensive research. They are not an invitation, endorsement, or instruction to commit any crime or unauthorized act.
-7. **No support obligations.** The maintainers owe you nothing. Issues, PRs, and questions may be addressed at the maintainers' discretion.
-
-If you cannot accept these terms, do not install or use Zircon.
+- Python 3.10 or newer.
+- A configured model provider, unless you use a local model.
+- Git is recommended for checkpoints and reviewing changes.
 
 ## License
 
-MIT
+Zircon is released under the MIT License.
+
+This project is provided as-is, without a promise that it will be correct, safe, available, or suitable for a particular purpose. You are responsible for how you configure and use it, including any changes it makes and any systems you test. Security-related use must be authorized and must follow applicable law and organizational policy.
+
+See the `LICENSE` file for the license text.

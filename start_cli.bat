@@ -36,7 +36,7 @@ echo.
 echo   Starting Zircon CLI...
 echo.
 
-python -m zirconAgent %*
+python "%~dp0__main__.py" %*
 
 echo.
 echo   Zircon closed.

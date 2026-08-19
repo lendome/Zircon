@@ -67,7 +67,7 @@ echo ""
 echo "  Starting Zircon CLI..."
 echo ""
 
-$PYTHON -m zirconAgent "$@"
+$PYTHON "$SCRIPT_DIR/__main__.py" "$@"
 
 echo ""
 echo "  Zircon closed."
