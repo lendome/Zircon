@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Zircon</title>
+<link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+<link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icon-16.png') }}">
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icon-32.png') }}">
+<link rel="icon" type="image/png" sizes="48x48" href="{{ url_for('static', filename='icon-48.png') }}">
+<link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icon-180.png') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div id="app">
+  <!-- Custom Titlebar - Windows style -->
+  <div class="titlebar" @mousedown="startDrag">
+    <div class="titlebar-section titlebar-left" ref="titlebarLeft">
+      <span class="titlebar-label">Zircon</span>
+    </div>
+    <div class="titlebar-section titlebar-center" ref="titlebarCenter">
+{% raw %}
+      <span class="titlebar-path" :title="repoPath">{{ repoPath ? repoShort : '' }}</span>
+{% endraw %}
+    </div>
+    <div class="titlebar-section titlebar-right" ref="titlebarRight">
+      <button class="titlebar-action-btn" @click="openSettings" title="Settings">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M7 9a2 2 0 100-4 2 2 0 000 4z" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M7 1v1M7 12v1M1 7h1M12 7h1M2.5 2.5l.7.7M10.8 10.8l.7.7M2.5 11.5l.7-.7M10.8 3.2l.7-.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <div class="titlebar-window-controls">
+        <button class="win-btn win-btn-minimize" @click="windowMinimize" title="Minimize">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path d="M2 5h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="win-btn win-btn-maximize" @click="windowMaximize" title="Maximize">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <rect x="1.5" y="1.5" width="7" height="7" rx="0.5" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+        </button>
+        <button class="win-btn win-btn-close" @click="windowClose" title="Close">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <!-- Side Panel -->
+    <aside class="sidepanel">
+      <div class="sidepanel-inner">
+        <div class="panel-section">
+          <div class="section-label">Workspace</div>
+          <button class="action-btn" @click="pickFolder">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M1 3.5a1 1 0 011-1h2.5l1 1H10a1 1 0 011 1V9a1 1 0 01-1 1H2a1 1 0 01-1-1V3.5z" stroke="currentColor" stroke-width="1.1"/>
+            </svg>
+            Open Workspace
+          </button>
+{% raw %}
+          <div class="repo-path">{{ repoPath || 'No workspace opened' }}</div>
+{% endraw %}
+        </div>
+
+        <!-- Sidebar Tabs -->
+        <div class="sidebar-tabs">
+{% raw %}
+          <button class="sidebar-tab" :class="{ active: sidebarTab === 'sessions' }" @click="sidebarTab = 'sessions'" :disabled="!connected">
+            <span>Sessions</span>
+            <span v-if="sessions.length" class="tab-badge">{{ sessions.length }}</span>
+          </button>
+          <button class="sidebar-tab" :class="{ active: sidebarTab === 'folders' }" @click="sidebarTab = 'folders'">
+            <span>Folders</span>
+          </button>
+{% endraw %}
+        </div>
+
+        <!-- Sessions Content -->
+{% raw %}
+        <div class="sidebar-content" :class="{ active: sidebarTab === 'sessions' && connected }">
+          <div class="sidebar-scroll">
+            <div class="sessions-header">
+              <span class="sessions-title">History</span>
+              <button class="icon-btn" @click="loadSessions" title="Refresh">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path d="M1 5a4 4 0 017.5-1.5M9 5a4 4 0 01-7.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                  <path d="M8.5 1v2.5H6M1.5 9V6.5H4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+            <div v-if="sessions.length === 0" class="empty-state">No sessions yet</div>
+            <div v-for="(s, i) in sessions" :key="s.id || i"
+              class="session-row"
+              :class="{ 'session-active': selectedSession === s.id }"
+              @click="viewSession(s.id)">
+              <div class="session-row-top">
+                <span class="session-status" :class="'status-' + (s.status || 'created')">{{ sessionStatusLabel(s.status) }}</span>
+                <span class="session-date">{{ formatSessionDate(s.started_at) }}</span>
+              </div>
+              <div class="session-task" :title="s.task || 'N/A'">{{ (s.task || 'N/A').slice(0, 40) }}{{ (s.task || '').length > 40 ? '...' : '' }}</div>
+              <div v-if="s.files_modified && s.files_modified.length" class="session-files">{{ s.files_modified.length }} file{{ s.files_modified.length !== 1 ? 's' : '' }}</div>
+            </div>
+          </div>
+        </div>
+{% endraw %}
+
+        <!-- Folders Content -->
+{% raw %}
+        <div class="sidebar-content" :class="{ active: sidebarTab === 'folders' }">
+          <div class="sidebar-scroll">
+            <div class="recent-header">
+              <span class="section-label" style="margin-bottom:0;">Recent Folders</span>
+              <button v-if="recentFolders.length" class="icon-btn" @click="clearRecentFolders" title="Clear">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+            <div v-if="recentFolders.length === 0" class="empty-state">No recent folders</div>
+            <div v-for="(folder, i) in recentFolders" :key="i" class="folder-row" @click="openRecentFolder(folder.path)" :title="folder.path">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="flex-shrink:0;">
+                <path d="M1 3.5a1 1 0 011-1h2.5l1 1H10a1 1 0 011 1V9a1 1 0 01-1 1H2a1 1 0 01-1-1V3.5z" stroke="currentColor" stroke-width="1.1"/>
+              </svg>
+              <span class="folder-name">{{ folder.name }}</span>
+            </div>
+          </div>
+        </div>
+{% endraw %}
+
+        <!-- Controls -->
+        <div class="panel-section">
+          <div class="section-label">Tier</div>
+          <div class="segmented-control">
+{% raw %}
+            <button v-for="t in tiers" :key="t.value"
+              class="segmented-btn"
+              :class="{ active: tier === t.value }"
+              @click="tier = t.value"
+            >{{ t.label }}</button>
+{% endraw %}
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="section-label">Mode</div>
+          <div class="segmented-control">
+{% raw %}
+            <button class="segmented-btn" :class="{ active: mode === 'chat' }" @click="mode = 'chat'">Chat</button>
+            <button class="segmented-btn" :class="{ active: mode === 'task' }" @click="mode = 'task'">Task</button>
+{% endraw %}
+          </div>
+          <label class="switch-row">
+{% raw %}
+            <input type="checkbox" class="switch" v-model="swarm">
+{% endraw %}
+            <span class="switch-label">Swarm Mode</span>
+          </label>
+        </div>
+        <div class="panel-section">
+          <div class="section-label">Status</div>
+          <div class="status-grid">
+{% raw %}
+            <div class="stat-card">
+              <span class="stat-key">Agent</span>
+              <span class="stat-value" :class="statusClass">
+                <span class="indicator" :class="statusClass"></span>
+                {{ statusText }}
+              </span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-key">Files</span>
+              <span class="stat-value">{{ workingSet }}</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-key">Modified</span>
+              <span class="stat-value">{{ modifiedCount }}</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-key">Notes</span>
+              <span class="stat-value">{{ notesCount }}</span>
+            </div>
+{% endraw %}
+          </div>
+        </div>
+
+        <!-- Sub-agent Progress -->
+        <div class="panel-section">
+          <div class="section-label">
+            Sub-Agents
+            <span v-if="subagentRunningCount > 0" class="count-badge">{{ subagentRunningCount }} active</span>
+          </div>
+          <div class="collapse-header">
+            <button class="collapse-btn" @click="subagentExpanded = !subagentExpanded">
+              <svg :class="{ rotated: subagentExpanded }" width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <path d="M3 2l4 3-4 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+{% raw %}
+          <div v-if="subagentExpanded" class="subagent-list">
+            <div v-if="subagentAgents.length === 0" class="empty-state">No sub-agents active</div>
+            <div v-for="(agent, i) in subagentAgents" :key="i"
+              class="subagent-item"
+              :class="{ 'is-running': agent.latest.status === 'running', 'is-done': agent.latest.status === 'completed' || agent.latest.status === 'complete' }"
+              @click="viewSubagent(agent.agent_id)">
+              <div class="subagent-top">
+                <span class="subagent-dot" :class="'dot-' + (agent.latest.status || 'idle')"></span>
+                <span class="subagent-id">{{ agent.agent_id }}</span>
+              </div>
+              <div class="subagent-bottom">
+                <span class="subagent-type">{{ agent.agent_type }}</span>
+                <span v-if="agent.latest.phase" class="subagent-phase">{{ agent.latest.phase }}</span>
+              </div>
+            </div>
+          </div>
+{% endraw %}
+        </div>
+
+        <div class="panel-footer">
+{% raw %}
+          <button class="action-btn action-btn-secondary" :disabled="!connected" @click="resetAgent">Reset Session</button>
+          <button class="action-btn action-btn-danger" :disabled="!connected" @click="clearAgent">Close</button>
+{% endraw %}
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Area -->
+    <main class="main">
+      <div class="toolbar">
+{% raw %}
+        <div class="connection-status">
+          <span class="dot" :class="connected ? 'online' : 'offline'"></span>
+          <span>{{ connected ? 'Online' : 'Offline' }}</span>
+        </div>
+        <div v-if="apiRequesting" class="api-indicator" title="LLM API request in progress">
+          <span class="api-pulse"></span>
+          <span class="api-label">API</span>
+        </div>
+        <span v-if="swarm" class="badge badge-swarm">Swarm</span>
+        <span class="badge badge-tier">{{ tier.charAt(0).toUpperCase() + tier.slice(1) }}</span>
+        <span v-if="subagentRunningCount > 0" class="badge badge-subagent">{{ subagentRunningCount }} active</span>
+        <div class="toolbar-space"></div>
+        <div class="view-tabs">
+          <button class="view-tab" :class="{ active: viewTab === 'chat' }" @click="viewTab = 'chat'">Chat</button>
+          <button class="view-tab" :class="{ active: viewTab === 'diff' }" @click="viewTab = 'diff'; loadDiffs()">Diff</button>
+        </div>
+        <div class="activity-toggle" @click="toggleActivityPanel" title="Toggle Activity Panel">
+          <span>Activity</span>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M2 3h8M2 6h8M2 9h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        </div>
+{% endraw %}
+      </div>
+
+{% raw %}
+      <div class="output-area" ref="outputArea">
+        <div v-if="viewTab === 'diff'" class="diff-view">
+          <div v-if="diffLoading" class="empty-state" style="padding:40px;">Loading diffs ...</div>
+          <div v-else-if="diffError" class="msg msg-error">
+            <div class="msg-label">Error</div>
+            <div class="msg-body">{{ diffError }}</div>
+          </div>
+          <div v-else-if="diffFiles.length === 0" class="empty-state" style="padding:40px;">No uncommitted changes</div>
+          <div v-else class="diff-list">
+            <div v-for="(diff, di) in diffs" :key="di" class="diff-file-block">
+              <div class="diff-file-header">
+                <span class="diff-file-icon" v-html="fileIcon(diff.file)"></span>
+                <span class="diff-file-name">{{ diff.file }}</span>
+              </div>
+              <pre class="diff-content">{{ diff.content }}</pre>
+            </div>
+          </div>
+        </div>
+        <div v-else>
+        <div v-if="messages.length === 0" class="welcome">
+          <div class="welcome-icon">
+            <img src="/static/icon-128.png" alt="Zircon" width="80" height="80" class="welcome-logo">
+          </div>
+          <div class="welcome-title">Zircon</div>
+          <div class="welcome-sub">Select a workspace folder to begin</div>
+          <div class="welcome-hint">or type a message after connecting</div>
+        </div>
+
+        <div v-for="(msg, i) in messages" :key="i" class="msg-block" :class="'msg-' + msg.type" @contextmenu.prevent="showContextMenu($event, msg, i)">
+          <div v-if="msg.type === 'user'" class="msg msg-user">
+            <div class="msg-label">You</div>
+            <div class="msg-body">{{ msg.text }}</div>
+          </div>
+          <div v-else-if="msg.type === 'trace'" class="msg msg-trace">
+            <span class="trace-phase" :style="{ color: phaseColor(msg.phase) }">[{{ formatPhase(msg.phase) }}]</span>
+            <span class="trace-detail">{{ msg.detail }}</span>
+          </div>
+          <div v-else-if="msg.type === 'text'" class="msg msg-chat">
+            <div class="msg-label">Agent</div>
+            <div class="msg-body markdown-body" v-html="renderMarkdown(msg.text)"></div>
+          </div>
+          <div v-else-if="msg.type === 'tool_calls'" class="msg msg-tool">
+            <div v-for="tc in msg.toolCalls" :key="tc.name" class="tool-call">
+              <span class="tool-call-name">{{ tc.name }}</span>
+            </div>
+          </div>
+          <div v-else-if="msg.type === 'tool_result'" class="msg msg-tool-result">
+            <div class="msg-label">Tool Result</div>
+            <div class="tool-result-collapse" @click="toggleToolResult(msg)">
+              <pre class="tool-result-body" :class="{ truncated: msg._collapsed }">{{ msg._collapsed ? msg._preview : msg.text }}</pre>
+              <span v-if="msg._collapsed" class="tool-result-expand-hint">--- {{ msg._lineCount }} lines, click to expand ---</span>
+              <span v-else class="tool-result-collapse-hint">--- collapse ---</span>
+            </div>
+          </div>
+          <div v-else-if="msg.type === 'error'" class="msg msg-error">
+            <div class="msg-label">Error</div>
+            <div class="msg-body">{{ msg.text }}</div>
+          </div>
+          <div v-else-if="msg.type === 'progress'" class="msg msg-progress">{{ msg.text }}</div>
+          <div v-else-if="msg.type === 'reasoning'" class="msg msg-reasoning">Thinking ...</div>
+          <div v-else-if="msg.type === 'thought'" class="msg msg-thought">{{ msg.text }}</div>
+          <div v-else-if="msg.type === 'done'" class="msg msg-done">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <rect x="2" y="2" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.2"/>
+            </svg>
+            {{ msg.status === 'completed' ? 'Complete' : 'Failed' }}
+          </div>
+          <div v-if="msg.canUndo" class="undo-bar">
+            <button class="undo-btn" @click="undoEdit(msg.undoId)">Undo this edit</button>
+            <span class="undo-hint">Reverts file and chat changes</span>
+          </div>
+        </div>
+
+        <!-- Context Menu -->
+        <div v-if="contextMenu.show" class="context-menu-overlay" @click="closeContextMenu" @contextmenu.prevent="closeContextMenu"></div>
+        <div v-if="contextMenu.show" class="context-menu" :style="contextMenu.style">
+          <div class="context-menu-item" @click="copyMessage(contextMenu.msg)">Copy Message</div>
+          <div class="context-menu-item" @click="copyMessageMarkdown(contextMenu.msg)">Copy as Markdown</div>
+          <div v-if="contextMenu.msg.type === 'user'" class="context-menu-item" @click="regenerateMessage(contextMenu.msg)">Regenerate</div>
+          <div v-if="contextMenu.canRegenerate" class="context-menu-item" @click="regenerateLastUserMessage()">Regenerate Last</div>
+          <div class="context-menu-divider"></div>
+          <div class="context-menu-item context-menu-item-danger" @click="deleteMessage(contextMenu.index)">Delete Message</div>
+        </div>
+
+        <div v-if="streaming" class="msg msg-streaming">
+          <div class="streaming-dots">
+            <span class="dot-anim"></span>
+            <span class="dot-anim"></span>
+            <span class="dot-anim"></span>
+          </div>
+        </div>
+
+        <!-- Historical session view bar -->
+        <div v-if="viewingSessionMessages" class="history-bar">
+          <span class="history-bar-label">Viewing: {{ viewingSessionLabel }}</span>
+          <button class="history-bar-close" @click="closeSessionChat">Back to Current</button>
+        </div>
+        </div>
+      </div>
+{% endraw %}
+
+      <!-- Plan Approval Bar -->
+{% raw %}
+      <div v-if="pendingPlan" class="plan-bar">
+        <div class="plan-bar-title">Plan Awaiting Approval</div>
+        <div class="plan-steps">
+          <div v-for="s in pendingPlan.steps" :key="s.index" class="plan-step">
+            <span class="plan-step-idx">{{ s.index }}.</span>
+            <span class="plan-step-action">[{{ s.action }}]</span>
+            <span class="plan-step-desc">{{ s.description }}</span>
+          </div>
+        </div>
+        <div class="plan-actions">
+          <button class="action-btn" :disabled="awaitingFeedback" @click="sendFeedback('approved')">Approve</button>
+          <button class="action-btn action-btn-danger" :disabled="awaitingFeedback" @click="sendFeedback('rejected')">Reject</button>
+          <input type="text" class="plan-input" v-model="planFeedbackText" placeholder="Custom feedback ..." @keyup.enter="sendFeedback(planFeedbackText)">
+          <button class="action-btn action-btn-secondary" :disabled="awaitingFeedback || !planFeedbackText" @click="sendFeedback(planFeedbackText)">Send</button>
+        </div>
+      </div>
+{% endraw %}
+
+      <!-- Input Area -->
+{% raw %}
+      <div class="input-area">
+        <div class="input-badge">{{ mode.toUpperCase() }}</div>
+        <textarea class="input-field" v-model="inputText" rows="1" :placeholder="connected ? 'Type a message ...' : 'Open a folder first ...'" :disabled="!connected || streaming" @keydown.enter.exact.prevent="sendMessage"></textarea>
+        <button v-if="streaming" class="input-btn input-btn-cancel" @click="cancelAction" title="Cancel">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="3" y="3" width="8" height="8" rx="1.5" fill="currentColor"/>
+          </svg>
+        </button>
+        <button v-else class="input-btn input-btn-send" :disabled="!connected || !inputText.trim()" @click="sendMessage" title="Send">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M2 7l10-5-5 10-2-3-3-2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+{% endraw %}
+    </main>
+
+    <!-- Activity Panel -->
+{% raw %}
+    <aside v-if="activityPanelOpen" class="activity-panel">
+      <div class="activity-header">
+        <span>Activity</span>
+        <button class="activity-close" @click="toggleActivityPanel">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="activity-content">
+        <div v-if="activityLog.length === 0" class="empty-state" style="padding:20px;">No activity yet</div>
+        <div v-for="(entry, i) in activityLog" :key="i" class="activity-entry">
+          <span class="activity-time">{{ entry.time }}</span>
+          <span class="activity-text">{{ entry.text }}</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Sub-agent Detail Modal -->
+    <div v-if="selectedSubagent" class="modal-overlay" @click.self="closeSubagentView">
+      <div class="modal">
+        <div class="modal-header">
+          <span class="modal-title">Sub-Agent: {{ selectedSubagent }}</span>
+          <button class="modal-close" @click="closeSubagentView">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div v-if="selectedSubagentEntries.length === 0" class="empty-state">No progress entries yet</div>
+          <div v-for="(entry, ei) in selectedSubagentEntries" :key="ei" class="subagent-entry">
+            <div class="subagent-entry-header">
+              <span class="subagent-entry-phase" :style="{ color: phaseColor(entry.phase) }">{{ entry.phase }}</span>
+              <span class="subagent-entry-status">{{ entry.status }}</span>
+            </div>
+            <div class="subagent-entry-detail">{{ entry.detail }}</div>
+            <div v-if="entry.files_modified && entry.files_modified.length" class="subagent-entry-files">
+              <span>Files modified: </span>
+              <span v-for="(f, fi) in entry.files_modified.slice(0, 5)" :key="fi" class="file-tag"><span class="file-tag-icon" v-html="fileIcon(f)"></span><span>{{ f }}</span></span>
+              <span v-if="entry.files_modified.length > 5">... ({{ entry.files_modified.length - 5 }} more)</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="action-btn" @click="closeSubagentView">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Session Detail Modal -->
+    <div v-if="selectedSessionDetail" class="modal-overlay" @click.self="closeSessionDetail">
+      <div class="modal">
+        <div class="modal-header">
+          <span class="modal-title">Session Detail</span>
+          <button class="modal-close" @click="closeSessionDetail">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="detail-section">
+            <div class="detail-section-title">Manifest</div>
+            <div class="detail-row">
+              <span class="detail-key">ID</span>
+              <span class="detail-value">{{ selectedSessionDetail.manifest.id }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-key">Task</span>
+              <span class="detail-value">{{ selectedSessionDetail.manifest.task }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-key">Status</span>
+              <span class="detail-value">{{ sessionStatusLabel(selectedSessionDetail.manifest.status) }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-key">Started</span>
+              <span class="detail-value">{{ formatSessionDate(selectedSessionDetail.manifest.started_at) }}</span>
+            </div>
+            <div class="detail-row" v-if="selectedSessionDetail.manifest.finished_at">
+              <span class="detail-key">Finished</span>
+              <span class="detail-value">{{ formatSessionDate(selectedSessionDetail.manifest.finished_at) }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-key">Tokens</span>
+              <span class="detail-value">{{ selectedSessionDetail.manifest.tokens_used || 0 }}</span>
+            </div>
+            <div class="detail-row" v-if="selectedSessionDetail.manifest.files_modified && selectedSessionDetail.manifest.files_modified.length">
+              <span class="detail-key">Files</span>
+              <span class="detail-value files-list">
+                <div v-for="(f, fi) in selectedSessionDetail.manifest.files_modified" :key="fi" class="file-tag"><span class="file-tag-icon" v-html="fileIcon(f)"></span><span>{{ f }}</span></div>
+              </span>
+            </div>
+          </div>
+          <div class="detail-section" v-if="selectedSessionDetail.journal && selectedSessionDetail.journal.length">
+            <div class="detail-section-title">Journal</div>
+            <div v-for="(entry, ei) in selectedSessionDetail.journal.slice(-20)" :key="ei" class="journal-entry">
+              <span class="journal-time">{{ formatSessionDate(entry.ts) }}</span>
+              <span class="journal-type">{{ entry.type }}</span>
+              <span v-if="entry.payload && entry.payload.task" class="journal-payload">{{ entry.payload.task.slice(0, 50) }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="action-btn" @click="loadSessionChat(selectedSessionDetail.manifest.id)" v-if="selectedSessionDetail && selectedSessionDetail.manifest">View Chat</button>
+          <button class="action-btn action-btn-secondary" @click="closeSessionDetail">Close</button>
+        </div>
+      </div>
+    </div>
+{% endraw %}
+  </div>
+
+  <!-- Settings Modal -->
+{% raw %}
+  <div v-if="showSettings" class="modal-overlay" @click.self="closeSettings">
+  <div class="modal modal-settings">
+    <div class="modal-header">
+      <span class="modal-title">Settings</span>
+      <button class="modal-close" @click="closeSettings">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <!-- Context Window Slider -->
+      <div class="settings-section">
+        <div class="settings-section-title">Context Window (per model)</div>
+        <div class="context-window-card">
+          <div class="context-window-display">
+            <span class="context-window-label">Max Context:</span>
+            <template v-if="contextWindowEditing">
+              <input class="field-input context-window-input" v-model="contextWindowInput" @blur="finishContextWindowEdit" @keyup.enter="finishContextWindowEdit" autofocus />
+            </template>
+            <template v-else>
+              <span class="context-window-value" @click="startContextWindowEdit">{{ formatContextWindow(contextWindowValue) }}</span>
+            </template>
+          </div>
+          <div class="context-window-slider-row">
+            <input type="range" class="context-window-slider" min="0" max="100" step="0.1"
+              :value="contextWindowSliderPos(contextWindowValue)"
+              @input="onContextWindowSliderInput" />
+          </div>
+          <div class="context-window-checkpoints">
+            <div v-for="cp in CONTEXT_WINDOW_CHECKPOINTS" :key="cp.value"
+              class="context-window-cp"
+              :class="{ 'cp-selected': contextWindowValue === cp.value }"
+              @click="selectContextCheckpoint(cp.value)">
+              {{ cp.label }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">LLM Providers</div>
+        <div v-for="(profile, name, idx) in settingsConfig.profiles || {}" :key="idx" class="provider-card">
+          <div class="provider-name">{{ name }}</div>
+          <div class="provider-field">
+            <span class="field-label">Base URL</span>
+            <input class="field-input" :value="profile.base_url" @input="e => updateSetting('profiles', name, 'base_url', e.target.value)" />
+          </div>
+          <div class="provider-field">
+            <span class="field-label">API Key</span>
+            <input class="field-input" type="password" :value="profile.api_key" @input="e => updateSetting('profiles', name, 'api_key', e.target.value)" />
+          </div>
+          <div class="provider-field">
+            <span class="field-label">Model</span>
+            <div class="model-row">
+              <input class="field-input" :value="profile.model" @input="e => updateSetting('profiles', name, 'model', e.target.value)" placeholder="e.g. gpt-4" />
+              <button class="fetch-btn" @click="fetchProviderModels(profile.base_url, profile.api_key, name)" :disabled="!profile.base_url">Fetch</button>
+            </div>
+            <div v-if="fetchedModels[name] && fetchedModels[name].length" class="model-picker">
+              <div v-for="m in fetchedModels[name]" :key="m" class="model-option" @click="updateSetting('profiles', name, 'model', m)">{{ m }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-title">Router</div>
+        <div v-for="(val, key) in settingsConfig.router || {}" :key="key" class="router-field">
+          <span class="field-label">{{ key.replace(/_/g, ' ').toUpperCase() }}</span>
+          <input class="field-input" :value="val" @input="e => updateRouter(key, e.target.value)" v-if="typeof val === 'string' || typeof val === 'number'" />
+          <span class="field-value" v-else>{{ typeof val === 'boolean' ? (val ? 'ON' : 'OFF') : JSON.stringify(val) }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <span v-if="settingsStatus" class="settings-status">{{ settingsStatus }}</span>
+      <button class="action-btn action-btn-secondary" @click="closeSettings">Cancel</button>
+      <button class="action-btn" @click="saveSettings">Save</button>
+    </div>
+  </div>
+</div>
+{% endraw %}
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

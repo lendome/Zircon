@@ -1,0 +1,46 @@
+# === Dot folders ===
+.zircon-code/
+.claude/
+.venv/
+.env
+.idea/
+.vscode/
+.mypy_cache/
+.pytest_cache/
+.tox/
+.git/
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+*.so
+
+# === Node ===
+node_modules/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Coverage ===
+.coverage*
+htmlcov/
+
+# === Benchmark run artifacts (logs + result/trace JSON; keep the .py tools) ===
+benchmark/failure_logs/
+benchmark/*.log
+benchmark/browsecomp_*.json
+benchmark/trace_*.json
+benchmark/data/
+
+# === Sandbox ===
+sandbox/tmp/
+.webui_secret_key
+
+# === Secrets / local-only ===
+SECURITY_VULNERABILITIES.md
+models.yaml

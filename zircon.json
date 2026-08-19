@@ -1,0 +1,8 @@
+{
+  "framework": "zircon",
+  "version": "1.0.0",
+  "storage_dir": ".zircon-code",
+  "commands_dir": ".zircon-code/commands",
+  "agents_dir": ".zircon-code/agents",
+  "sessions_dir": ".zircon-code/sessions"
+}

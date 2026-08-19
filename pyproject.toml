@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "zircon"
+version = "0.1.0"
+description = "Zircon agent"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+zircon = "zirconAgent.cli:main"
+
+

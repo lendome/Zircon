@@ -1,0 +1,4 @@
+Dataset: 1266 questions loaded and decrypted
+[1/1266] FAIL  (21.1s)  gold='1988-96' predicted='Stopped the tool loop to prevent a hang:'
+[2/1266] FAIL  (18.0s)  gold='Cristina Ortiz' predicted='Stopped the tool loop to prevent a hang:'
+[3/1266] FAIL  (24.3s)  gold='3:50 PM' predicted='Stopped the tool loop to prevent a hang:'
