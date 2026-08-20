@@ -12,9 +12,9 @@ As with any tool that can change a codebase, review the resulting diff and verif
 
 Zircon can help with tasks such as:
 
-- Understanding an unfamiliar repository.
+- Understanding an unfamiliar repository. [edit_file OK]
 - Finding functions, files, references, and related code.
-- Fixing bugs and implementing features.
+- Finding functions, files, references, and related code. [edit_lines OK]
 - Refactoring across multiple files.
 - Writing and running tests.
 - Researching documentation and technical questions.

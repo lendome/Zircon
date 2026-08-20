@@ -533,7 +533,6 @@ class Executor:
         # Also detect files from run_command (cat/grep/ls/head/tail/wc)
         if call.name == "run_command" and "command" in call.arguments:
             cmd = call.arguments["command"]
-            import re
             # Match: cat|head|tail|wc|grep|ls|less|more filename
             for m in re.finditer(r'(?:cat|head|tail|wc|grep|ls|less|more|nano|vim)\s+(?:-\w+\s+)*["\']?([^\s"\'|;<>]+)["\']?', cmd):
                 path = m.group(1)

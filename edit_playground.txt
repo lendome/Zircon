@@ -1,0 +1,6 @@
+line one
+LINE TWO EDITED
+line three
+line four -> replaced by edit_lines
+line five
+AIDER APPENDED LINE

@@ -26,6 +26,24 @@ def executor(tmp_path):
 
 
 class TestExecutorBasicLoop:
+    def test_aider_edit_path_extraction(self, executor):
+        call = ToolCall(
+            id="edit-1",
+            name="aider_edit",
+            arguments={
+                "content": (
+                    "zirconAgent/README.md\n"
+                    "<<<<<<< SEARCH\n"
+                    "old text\n"
+                    "=======\n"
+                    "new text\n"
+                    ">>>>>>> REPLACE"
+                )
+            },
+        )
+
+        assert executor._paths_from_tool_call(call) == ["zirconAgent/README.md"]
+
     @pytest.mark.asyncio
     async def test_immediate_text_response(self, executor):
         executor.router.generate = AsyncMock(
