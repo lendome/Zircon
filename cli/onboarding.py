@@ -40,6 +40,7 @@ class ProviderPreset:
 
 
 _PRESETS = [
+    ProviderPreset("Zircon Free", "Free, keyless access to Zircon Uncensored Medium", "https://usezircon.com/free/v1"),
     ProviderPreset("OpenRouter", "One key, a broad model catalog", "https://openrouter.ai/api/v1"),
     ProviderPreset("OpenAI", "ChatGPT and OpenAI API models", "https://api.openai.com/v1"),
     ProviderPreset("Anthropic", "Claude through its OpenAI-compatible endpoint", "https://api.anthropic.com/v1"),
@@ -149,7 +150,7 @@ class _Wizard:
             title = "  2 / 4  Connection  "
             hint = "Type URL   Enter continue   Esc back"
         elif self.stage == "key":
-            body = self._render_text_field("API key", self.api_key, "Leave empty only for local providers", masked=True)
+            body = self._render_text_field("API key", self.api_key, "Leave empty for Zircon Free or local providers", masked=True)
             title = "  2 / 4  Authentication  "
             hint = "Type key   Enter fetch models   Esc back"
         elif self.stage == "fetch":
