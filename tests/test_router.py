@@ -212,3 +212,20 @@ class TestBuildPayload:
         router.set_nitro_mode(True)
 
         assert router._build_payload(profile, [], None, None)["model"] == "test-model"
+
+
+class TestRequestHeaders:
+    def test_omits_authorization_for_keyless_provider(self):
+        profile = make_profile("default")
+        profile.api_key = ""
+
+        assert ModelRouter._request_headers(profile) == {"Content-Type": "application/json"}
+
+    def test_includes_authorization_for_keyed_provider(self):
+        profile = make_profile("default")
+        profile.api_key = "secret"
+
+        assert ModelRouter._request_headers(profile) == {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer secret",
+        }

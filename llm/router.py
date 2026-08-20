@@ -72,6 +72,13 @@ class ModelRouter:
             self.session_cost_usd += cost
 
     @staticmethod
+    def _request_headers(profile: ModelProfile) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if profile.api_key:
+            headers["Authorization"] = f"Bearer {profile.api_key}"
+        return headers
+
+    @staticmethod
     def _request_max_tokens(profile: ModelProfile, requested: int | None) -> int:
         """Keep caller budgets within the profile's known provider limit."""
         return min(requested or profile.max_tokens, profile.max_tokens)
@@ -284,10 +291,7 @@ class ModelRouter:
         async with httpx.AsyncClient(timeout=profile.timeout) as client:
             resp = await client.post(
                 f"{profile.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {profile.api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=self._request_headers(profile),
                 json=payload,
             )
             resp.raise_for_status()
@@ -327,10 +331,7 @@ class ModelRouter:
             async with client.stream(
                 "POST",
                 f"{profile.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {profile.api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=self._request_headers(profile),
                 json=payload,
             ) as resp:
                 resp.raise_for_status()

@@ -328,10 +328,11 @@ class LocalTransport(Transport):
         """Fetch an OpenAI-compatible v1/models catalog without exposing credentials."""
         import httpx
 
+        headers = {"Authorization": f"Bearer {profile.api_key}"} if profile.api_key else {}
         async with httpx.AsyncClient(timeout=min(float(profile.timeout), 30.0)) as client:
             response = await client.get(
                 f"{profile.base_url.rstrip('/')}/models",
-                headers={"Authorization": f"Bearer {profile.api_key}"},
+                headers=headers,
             )
             response.raise_for_status()
             payload = response.json()
