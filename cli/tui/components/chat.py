@@ -213,7 +213,7 @@ class _ModelPicker:
 
     @property
     def selected_profile(self) -> dict[str, Any] | None:
-        if self.stage in ("catalog", "profile"):
+        if self.stage == "catalog":
             return next((item for item in self.profiles if item.get("id") == self.selected_profile_id), None)
         options = self.options
         return options[self.index] if options else None
