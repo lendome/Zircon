@@ -685,7 +685,13 @@ class Executor:
         """
         if not tools:
             return tools
-        if not self.router.role_supports_vision(self.role):
+        # Bare executors (e.g. unit-test stubs via __new__) may lack a
+        # router; the vision gate is best-effort then.
+        _router = getattr(self, "router", None)
+        _supports_vision = getattr(_router, "role_supports_vision", None)
+        if _router is not None and callable(_supports_vision) and not _supports_vision(self.role) and any(
+            tool.get("name") == "view_image" for tool in tools
+        ):
             tools = [tool for tool in tools if tool.get("name") != "view_image"]
         gates = getattr(self, "_tool_gates", None) or {}
         cooldown = getattr(self, "_veto_cooldown", None)
@@ -783,7 +789,10 @@ class Executor:
         self._exec_state.task = self._extract_task(messages)
 
         def _time_limit_result():
-            result.disposition = CompletionDisposition.INCOMPLETE
+            # The wall-clock budget is a turn-budget stop: report it as
+            # TURN_LIMIT (not INCOMPLETE) so callers can nudge a continuation
+            # or report the cap honestly.
+            result.disposition = CompletionDisposition.TURN_LIMIT
             result.state_facts = self._exec_state.facts_for_prompt()
             result.missing_evidence = self._missing_for_prompt()
             result.trace.append(TraceEvent(
@@ -888,12 +897,14 @@ class Executor:
                     await asyncio.sleep(delay)
                     continue
                 logger.error("LLM router error: %s", err_msg)
-                return ExecutionResult(
-                    success=False,
-                    output=f"LLM error: {err_msg}",
-                    history_turns=history_turns,
-                    disposition=CompletionDisposition.INCOMPLETE,
-                )
+                # Preserve the tracking accumulated so far (files touched,
+                # turns, trace) — aborting the loop must not erase what the
+                # agent actually did before the error.
+                result.success = False
+                result.output = f"LLM error: {err_msg}"
+                result.history_turns = history_turns
+                result.disposition = CompletionDisposition.INCOMPLETE
+                return result
 
             turn += 1
             self._llm_error_retries = 0
@@ -1069,10 +1080,12 @@ class Executor:
                 else:
                     result.disposition = CompletionDisposition.DECLARED
                 result.evidence = self._exec_state.facts_for_prompt()
-                result.output = response.content
+                # content can be None on a tool-call-only finish; normalize so
+                # result.output and the trace payload never crash downstream.
+                result.output = response.content or ""
                 if response.content:
                     history_turns.append({"role": "assistant", "content": response.content})
-                result.trace.append(TraceEvent(phase="done", detail="agent finished", payload={"content": response.content[:200]}))
+                result.trace.append(TraceEvent(phase="done", detail="agent finished", payload={"content": (response.content or "")[:200]}))
                 result.history_turns = history_turns
                 return result
 

@@ -207,15 +207,30 @@ class ContextManager:
             self.session_notes = self.session_notes[-50:]
 
     def add_tool_exchange(self, tool_name: str, args: dict, result: str, distill: bool = True):
+        # Normalize: tool results can arrive as None on failure paths; store ""
+        # so downstream consumers (len(), slicing, token counting) never crash.
+        result = result if isinstance(result, str) else ("" if result is None else str(result))
         if distill:
             result = self.distiller.distill_for_history(result, tool_name)
         self.history.append({"role": "assistant", "tool_call": {"name": tool_name, "arguments": args}})
         self.history.append({"role": "tool", "content": result, "tool_name": tool_name})
 
     def add_assistant_message(self, content: str):
+        # Normalize: LLM responses and fallback paths can pass None; an
+        # explicit "content": None breaks every msg.get("content", "") caller
+        # (the default only fires when the key is ABSENT, not None-valued).
+        content = content if isinstance(content, str) else ("" if content is None else str(content))
+        # Deduplicate: chat_stream adds the final response AFTER extending
+        # history with the executor's last turn, which already contains the
+        # same assistant message. Don't append it twice.
+        if self.history:
+            last = self.history[-1]
+            if last.get("role") == "assistant" and last.get("content") == content:
+                return
         self.history.append({"role": "assistant", "content": content})
 
     def add_user_message(self, content: str):
+        content = content if isinstance(content, str) else ("" if content is None else str(content))
         self.history.append({"role": "user", "content": content})
 
     def add_promoted_inputs(self, inputs: list[str]) -> None:
