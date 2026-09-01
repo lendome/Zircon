@@ -36,6 +36,22 @@ def _response_was_truncated(finish_reason: str) -> bool:
     }
 
 
+_PREMATURE_COMPLETION_RE = re.compile(
+    r"^(?:done|finished|complete(?:d)?|all\s+set|that(?:'s| is)\s+it|"
+    r"task\s+(?:complete|completed|finished))(?:[.!\s]*)$",
+    re.IGNORECASE,
+)
+
+
+def _is_premature_completion(text: str, state: ExecutionState, has_done_work: bool) -> bool:
+    """Reject a bare completion marker before implementation work exists."""
+    if has_done_work or not text.strip():
+        return False
+    if "implementation" not in classify_task(state):
+        return False
+    return bool(_PREMATURE_COMPLETION_RE.fullmatch(text.strip()))
+
+
 def _short_args(args: dict, max_len: int = 60) -> str:
     """Compact one-line preview of tool arguments for progress labels."""
     parts: list[str] = []
@@ -555,7 +571,7 @@ class Executor:
     # turn — safe to run concurrently. run_command is deliberately excluded
     # (arbitrary shell), as are all edit tools.
     _PARALLEL_SAFE_TOOLS = frozenset({
-        "read_file", "grep_code", "find_symbols", "get_structure",
+        "read_file", "view_image", "grep_code", "find_symbols", "get_structure",
         "glob_files", "list_dir", "web_search", "fetch_url", "lookup_docs",
         "get_function_body", "find_references", "get_symbol_definition",
         "get_function_dependencies", "get_callers", "get_ast_range",
@@ -669,6 +685,8 @@ class Executor:
         """
         if not tools:
             return tools
+        if not self.router.role_supports_vision(self.role):
+            tools = [tool for tool in tools if tool.get("name") != "view_image"]
         gates = getattr(self, "_tool_gates", None) or {}
         cooldown = getattr(self, "_veto_cooldown", None)
         if cooldown is None:
@@ -940,6 +958,21 @@ class Executor:
                     current_messages.append({"role": "system", "content": force_msg})
                     result.trace.append(TraceEvent(phase="anti_loop", detail="text-only in edit_mode, forcing continuation"))
                     continue
+                # A bare completion marker before any implementation work is
+                # not a successful answer. This covers generic coding tasks
+                # that do not have build/server evidence requirements.
+                if _is_premature_completion(response.content or "", self._exec_state, has_done_work) and self._can_force_continuation():
+                    force_msg = (
+                        "<system_note>\n"
+                        "You reported completion before implementing the requested change. "
+                        "Do NOT stop yet. Inspect the relevant files and make the requested "
+                        "edit with the available tools, then verify it.\n"
+                        "</system_note>"
+                    )
+                    current_messages.append({"role": "assistant", "content": response.content})
+                    current_messages.append({"role": "system", "content": force_msg})
+                    result.trace.append(TraceEvent(phase="anti_loop", detail="premature completion marker, forcing implementation"))
+                    continue
                 # A substantive text answer after doing tool work is a legitimate
                 # completion (e.g. read-only exploration / Q&A). Only force a
                 # continuation when the model gave up with NO content — that's
@@ -1078,7 +1111,11 @@ class Executor:
             # preserve ordering guarantees.
             executed = await self._execute_batch(response.tool_calls)
 
+            turn_model_content: list[dict] = []
             for call, tool_result_str in zip(response.tool_calls, executed):
+                model_content = getattr(tool_result_str, "model_content", None)
+                if model_content:
+                    turn_model_content.extend(model_content)
                 logger.info("tool %s(%s) => %d chars", call.name,
                             str(call.arguments)[:80], len(tool_result_str))
 
@@ -1142,6 +1179,10 @@ class Executor:
                         phase="syntax_check",
                         detail=f"Syntax errors found after {call.name}",
                     ))
+            if turn_model_content:
+                image_msg = {"role": "user", "content": turn_model_content}
+                current_messages.append(image_msg)
+                history_turns.append(image_msg)
 
             # Attribute real filesystem mutations detected by the snapshot
             # tracker (shell writes etc.) once per turn, deduped across turns.
@@ -1452,6 +1493,18 @@ class Executor:
                         current_messages.append({"role": "system", "content": force_msg})
                         yield StreamChunk(text="\n[Continuing — task not yet completed]\n")
                         continue
+                    if _is_premature_completion(collected_content or "", self._exec_state, has_done_work) and self._can_force_continuation():
+                        force_msg = (
+                            "<system_note>\n"
+                            "You reported completion before implementing the requested change. "
+                            "Do NOT stop yet. Inspect the relevant files and make the requested "
+                            "edit with the available tools, then verify it.\n"
+                            "</system_note>"
+                        )
+                        current_messages.append({"role": "assistant", "content": collected_content})
+                        current_messages.append({"role": "system", "content": force_msg})
+                        yield StreamChunk(progress_label="Completion reported too early; continuing implementation...")
+                        continue
                     # --- Test-run nudge (streaming) ---
                     if (
                         has_done_work
@@ -1566,6 +1619,7 @@ class Executor:
                     )
                     _batch_results = await self._execute_batch(collected_tool_calls)
 
+                turn_model_content: list[dict] = []
                 for call_index, call in enumerate(collected_tool_calls):
                     if _batch_results is not None:
                         tool_result_str = _batch_results[call_index]
@@ -1585,6 +1639,10 @@ class Executor:
                         except Exception as e:
                             tool_result_str = f"Error executing {call.name}: {e}"
                             yield StreamChunk(error=tool_result_str)
+
+                    model_content = getattr(tool_result_str, "model_content", None)
+                    if model_content:
+                        turn_model_content.extend(model_content)
 
                     # Derive execution-state facts + append URL-health diagnostics
                     # so the agent sees reachability without an extra tool call.
@@ -1643,6 +1701,11 @@ class Executor:
                     for syntax_msg in syntax_messages:
                         current_messages.append(syntax_msg)
                         self._last_history_turns.append(syntax_msg)
+
+                if turn_model_content:
+                    image_msg = {"role": "user", "content": turn_model_content}
+                    current_messages.append(image_msg)
+                    self._last_history_turns.append(image_msg)
 
                 # Attribute real filesystem mutations detected by the snapshot
                 # tracker (shell writes etc.) once per turn, deduped across turns.

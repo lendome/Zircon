@@ -12,7 +12,7 @@ case "$(uname -s 2>/dev/null || true)" in
         exec cmd.exe /c "$(cygpath -w "$SCRIPT_DIR/install.bat")"
         ;;
     *)
-        echo "[ERROR] Unsupported operating system: $(uname -s 2>/dev/null || echo unknown)" >&2
+        echo "[ERROR] Unsupported operating system: $(uname -s 2>/dev/null || echo unknown). We support Mac, and Arch and Debian derivatives." >&2
         exit 1
         ;;
 esac

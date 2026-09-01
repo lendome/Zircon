@@ -18,6 +18,7 @@ profiles:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "YOUR_API_KEY_HERE"
     model: "openai/gpt-5.6-sol-pro"
+    supports_vision: true
     reasoning_effort: "max"
     max_tokens: 4096
     context_window: 128000
@@ -43,6 +44,8 @@ profiles:
     base_url: "https://openrouter.ai/api/v1"
     api_key: "YOUR_API_KEY_HERE"
     model: "minimax/minimax-m2.7"
+    # Set true only when this endpoint/model accepts image_url message parts.
+    supports_vision: false
     max_tokens: 8192
     context_window: 32000
     supports_caching: false

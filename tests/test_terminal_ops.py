@@ -5,6 +5,7 @@ that is exactly what the tool under test does. Windows-only.
 """
 
 import os
+import time
 
 import pytest
 
@@ -50,8 +51,12 @@ async def _poll_until(out_tool, tid, predicate, attempts=20):
 class TestRunInTerminal:
     @pytest.mark.asyncio
     async def test_quick_command_completes_with_exit_code(self, tool, tm):
-        result = await tool.run(command="echo TERM_OK", wait_seconds=2)
+        started = time.monotonic()
+        result = await tool.run(command="echo TERM_OK", wait_seconds=5)
+        elapsed = time.monotonic() - started
         assert "Opened terminal window" in result
+        assert "EXITED (exit code 0)" in result
+        assert elapsed < 4
         tid = _term_id(result)
 
         out = TerminalOutputTool(tm)

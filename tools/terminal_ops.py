@@ -212,6 +212,18 @@ class TerminalManager:
         # closed by the user or killed externally.
         return "EXITED", None
 
+    async def wait_until_exit(self, session: TerminalSession, timeout: float) -> None:
+        """Wait up to timeout seconds, returning as soon as the command exits."""
+        deadline = time.monotonic() + timeout
+        while timeout > 0:
+            status, _ = await self.status(session)
+            if status == "EXITED":
+                return
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            await asyncio.sleep(min(0.2, remaining))
+
     async def stop(self, term_id: str) -> TerminalSession | None:
         session = self._sessions.get(term_id)
         if session is None:
@@ -316,7 +328,7 @@ class RunInTerminalTool(Tool):
 
         wait = max(0, min(int(wait_seconds), _MAX_WAIT_SECONDS))
         if wait:
-            await asyncio.sleep(wait)
+            await self.tm.wait_until_exit(session, wait)
 
         status, code = await self.tm.status(session)
         result = _format_snapshot(
@@ -375,7 +387,7 @@ class TerminalOutputTool(Tool):
 
         wait = max(0, min(int(wait_seconds), _MAX_WAIT_SECONDS))
         if wait:
-            await asyncio.sleep(wait)
+            await self.tm.wait_until_exit(session, wait)
 
         status, code = await self.tm.status(session)
         return _format_snapshot(session, status, code, header=f"Output of terminal '{id}':")

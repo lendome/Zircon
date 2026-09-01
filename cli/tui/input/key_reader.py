@@ -335,12 +335,114 @@ def read_key() -> str:
         - Special keys: "return", "backspace", "escape", "up", "down", etc.
         - Modified keys: "ctrl+left", "shift+home", "ctrl+shift+right", ...
         - Bracketed pastes: "paste:<payload>" (payload may contain newlines)
+
+    Auto-repeat: while the user holds a repeatable key (arrows, home/end,
+    backspace/delete, ctrl+word keys), subsequent presses inside the
+    terminal's own repeat stream are coalesced into short bursts so a
+    single key event reaches the UI per tick. See _read_key_batch.
     """
     if _pending_keys:
         return _pending_keys.pop(0)
     if _IS_WINDOWS:
         return _read_key_windows()
     return _read_key_unix()
+
+
+# Keys for which holding should feel like native auto-repeat: navigation
+# and deletion. Printable chars and return/escape are left to the
+# terminal's own repeat rate.
+_REPEATABLE_KEYS = frozenset({
+    "up", "down", "left", "right",
+    "home", "end", "pageup", "pagedown", "insert", "delete", "backspace",
+    "ctrl+left", "ctrl+right", "ctrl+up", "ctrl+down",
+    "ctrl+home", "ctrl+end", "ctrl+pageup", "ctrl+pagedown",
+    "ctrl+delete", "ctrl+backspace",
+    "alt+left", "alt+right", "alt+backspace", "alt+delete",
+    "shift+left", "shift+right", "shift+home", "shift+end",
+    "ctrl+shift+left", "ctrl+shift+right",
+})
+
+# Coalesce window: keys arriving within this many seconds of the previous
+# one are considered part of a held-key repeat stream.
+_REPEAT_WINDOW = 0.035
+_last_key_time: dict[str, float] = {}
+
+
+def _read_key_batch() -> list[str]:
+    """Read one key, or the whole burst when a repeatable key is held.
+
+    The terminal's key-repeat delivers ~30 events per second; a full
+    prompt repaint per event makes held-key navigation (Ctrl+Arrow,
+    Backspace) crawl behind the finger. Reading the ready burst of a
+    held *repeatable* key returns every repeat event in one list so the
+    caller can apply them all and repaint once. Non-repeatable keys and
+    mixed bursts are returned as-is.
+
+    Returns a list of normalized key names, in order.
+    """
+    keys = [read_key()]
+    if keys[0] not in _REPEATABLE_KEYS:
+        return keys
+    # Only treat as a held key when the same key was seen moments ago —
+    # a first press may still be a deliberate tap.
+    now = time.monotonic()
+    held = (now - _last_key_time.get(keys[0], 0.0)) < _REPEAT_WINDOW * 3
+    _last_key_time[keys[0]] = now
+    if not held:
+        return keys
+
+    # Drain the ready burst. The first key not matching the held key is
+    # queued for the next read; anything else (including more repeats)
+    # is part of this burst.
+    deadline = time.monotonic() + _REPEAT_WINDOW
+    while time.monotonic() < deadline:
+        key = _peek_key(deadline)
+        if key is None:
+            break
+        if key != keys[0]:
+            _pending_keys.append(key)
+            break
+        keys.append(key)
+    return keys
+
+
+def _peek_key(deadline: float) -> str | None:
+    """Read one more key if its first byte arrives before deadline.
+
+    Decoding needs follow-up bytes for escape sequences; those use their
+    usual short timeouts and don't extend the burst window.
+    """
+    if _IS_WINDOWS:
+        if _WINDOWS_VT:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            ch = _win_read_byte(remaining)
+            if ch is None:
+                return None
+            return _decode_vt_first_byte(ch, _win_read_byte) or None
+        # Legacy console: msvcrt is non-blocking-ish via kbhit.
+        import msvcrt
+        if not msvcrt.kbhit():
+            return None
+        return read_key() or None
+
+    import select
+    fd = sys.stdin.fileno()
+    remaining = deadline - time.monotonic()
+    if remaining <= 0 or not select.select([fd], [], [], remaining)[0]:
+        return None
+    b = os.read(fd, 1)
+    if not b:
+        return None
+
+    def read_byte(t: float | None) -> int | None:
+        if t is not None and not select.select([fd], [], [], t)[0]:
+            return None
+        nb = os.read(fd, 1)
+        return nb[0] if nb else None
+
+    return _decode_vt_first_byte(b[0], read_byte) or None
 
 
 # ── Windows ────────────────────────────────────────────────────────────

@@ -52,6 +52,7 @@ from ..palette.registry import CommandRegistry
 from ..dialogs.toast import ToastManager, ToastVariant
 from ..input.key_reader import (
     RawTerminal,
+    _read_key_batch,
     disable_mouse_tracking,
     enable_mouse_tracking,
     is_printable,
@@ -467,6 +468,9 @@ class ChatComponent:
         self._active_session: Any | None = None
         self._restored_message_count = 0
         self._mouse_selection_anchor: int | None = None
+        # True while applying intermediate keys of a held-key burst; _render
+        # is skipped so a long Ctrl+Arrow hold repaints once, not per tick.
+        self._defer_render = False
         self._prompt_origin_row: int | None = None
         self._prompt_render_width = 80
         self._mouse_tracking_enabled = True
@@ -655,8 +659,19 @@ class ChatComponent:
                             # executor so the event loop stays free to
                             # process background streaming tasks. This is
                             # what lets Escape interrupt an active turn.
-                            key = await loop.run_in_executor(None, read_key)
-                            await self._handle_key(key)
+                            # _read_key_batch coalesces bursts from a held
+                            # repeatable key (e.g. Ctrl+Arrow) into one
+                            # delivered event so press-and-hold navigation
+                            # repaints at most once per batch.
+                            keys = await loop.run_in_executor(None, _read_key_batch)
+                            for i, key in enumerate(keys):
+                                # Skip intermediate repaints inside a
+                                # held-key burst; the final key repaints.
+                                self._defer_render = i < len(keys) - 1
+                                await self._handle_key(key)
+                                if not self._running:
+                                    break
+                            self._defer_render = False
                         except (EOFError, KeyboardInterrupt):
                             break
                         except Exception as e:
@@ -1060,6 +1075,9 @@ class ChatComponent:
     def _render(self) -> None:
         """Render the current input state, footer, and overlays.
 
+        Skipped while draining an intermediate held-key burst — the final
+        key of the burst performs the one visible repaint.
+
         Renders everything to a StringIO buffer first (so we can count
         the exact number of lines), then moves the cursor up by that
         count on the next render, clears, and reprints. This is purely
@@ -1068,6 +1086,9 @@ class ChatComponent:
         import io
         import shutil
         from rich.console import Console as RichConsole
+
+        if self._defer_render:
+            return
 
         theme = self._theme_signal.get()
 

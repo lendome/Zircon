@@ -114,6 +114,33 @@ class TestCompletionGateInLoop:
         # The executor state should have recorded the artifact.
         assert any("app.exe" in a for a in executor._exec_state.artifacts)
 
+    @pytest.mark.asyncio
+    async def test_premature_done_on_generic_implementation_is_continued(self, registry):
+        """A bare Done must not finish an implementation task before an edit."""
+        responses = [
+            tool_response("Done."),
+            tool_call_response([("create_file", {"path": "created.txt", "content": "implemented\n"})]),
+            tool_response(
+                "Implemented the requested change in created.txt. "
+                "The file contains the requested implementation and is ready for review."
+            ),
+        ]
+
+        async def _gen(**kwargs):
+            return responses.pop(0)
+
+        router = make_router()
+        router.generate = _gen
+        executor = Executor(router, registry)
+
+        result = await executor.run_tool_loop(
+            messages=[{"role": "user", "content": "implement the requested change"}],
+        )
+
+        assert result.output.startswith("Implemented the requested change in created.txt.")
+        assert any("premature completion marker" in event.detail for event in result.trace)
+        assert "created.txt" in result.files_modified
+
 
 class TestUrlProbeInLoop:
     @pytest.mark.asyncio

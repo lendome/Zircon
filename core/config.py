@@ -131,6 +131,7 @@ def load_config(config_path: Path | str | None = None) -> tuple[RouterConfig, Ag
             timeout=pdata.get("timeout", 120.0),
             reasoning_effort=pdata.get("reasoning_effort"),
             reasoning_enabled=pdata.get("reasoning_enabled"),
+            supports_vision=pdata.get("supports_vision"),
         ))
 
     router_data = resolved.get("router", {})

@@ -111,6 +111,35 @@ class TestGenerate:
         assert result.content == "recovered"
         sleep.assert_awaited_once_with(3.0)
 
+    @pytest.mark.asyncio
+    async def test_image_request_uses_only_vision_profiles(self):
+        text = make_profile("text")
+        text.supports_vision = False
+        vision = make_profile("vision")
+        vision.supports_vision = True
+        router = make_router_with_profiles(text, vision)
+        router._call = AsyncMock(return_value=LLMResponse(content="seen"))
+        messages = [{
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": {"url": "https://example.com/a.png"}}],
+        }]
+
+        await router.generate("default", messages)
+
+        assert router._call.await_args.args[0].name == "vision"
+
+    @pytest.mark.asyncio
+    async def test_image_request_rejects_text_only_role(self):
+        profile = make_profile("text")
+        profile.supports_vision = False
+        router = make_router_with_profiles(profile)
+
+        with pytest.raises(RuntimeError, match="No vision-compatible model"):
+            await router.generate("default", [{
+                "role": "user",
+                "content": [{"type": "image_url", "image_url": {"url": "https://example.com/a.png"}}],
+            }])
+
 
 class TestToolCallsParsing:
     def test_parse_tool_calls(self):

@@ -143,6 +143,17 @@ class BackgroundProcess:
     def is_running(self) -> bool:
         return self.proc.returncode is None
 
+    async def wait_until_exit(self, timeout: float) -> None:
+        """Wait up to timeout seconds, returning early when the process exits."""
+        if timeout <= 0 or not self.is_running():
+            return
+        try:
+            await asyncio.wait_for(self.proc.wait(), timeout=timeout)
+            # Give the pipe readers a turn to consume output buffered at exit.
+            await asyncio.sleep(0)
+        except asyncio.TimeoutError:
+            pass
+
     def snapshot(self, max_chars: int = 8000) -> dict[str, Any]:
         out = "".join(self.stdout_lines)
         err = "".join(self.stderr_lines)
@@ -231,7 +242,7 @@ class ProcessManager:
         if stdin_input is not None:
             await bp.send_input(stdin_input)
 
-        await asyncio.sleep(initial_wait)
+        await bp.wait_until_exit(initial_wait)
 
         pid = self._alloc_id()
         self._processes[pid] = bp
@@ -536,7 +547,7 @@ class ShellPollTool(Tool):
             )
 
         if wait > 0 and bp.is_running():
-            await asyncio.sleep(wait)
+            await bp.wait_until_exit(wait)
 
         snap = bp.snapshot(max_chars=8000)
         lines = [

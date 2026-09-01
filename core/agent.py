@@ -85,6 +85,7 @@ from ..tools.nav_ops import GetSymbolDefinitionTool, GetFunctionBodyTool, FindRe
 from ..tools.terminal_ops import TerminalManager, RunInTerminalTool, TerminalOutputTool, TerminalStopTool
 from ..tools.web_ops import FetchUrlTool, LookupDocsTool, WebSearchTool
 from ..tools.research_ops import DeepResearchTool
+from ..tools.image_ops import ViewImageTool
 
 
 _SYSTEM_PROMPTS = {
@@ -672,6 +673,7 @@ class Agent:
             ScrollUpTool(rp),
             ScrollDownTool(rp),
             GotoLineTool(rp),
+            ViewImageTool(rp),
             EditFileTool(rp),
             EditLinesTool(rp),
             AiderEditTool(rp),
@@ -853,7 +855,7 @@ class Agent:
 
     def _get_tools_for_step(self, step: PlanStep) -> list[dict]:
         if step.action == "explore":
-            names = ["read_file", "grep_code", "find_symbols", "get_structure", "glob_files", "list_dir", "get_function_dependencies", "get_callers", "get_ast_range", "get_function_body", "find_references", "get_symbol_definition"]
+            names = ["read_file", "view_image", "grep_code", "find_symbols", "get_structure", "glob_files", "list_dir", "get_function_dependencies", "get_callers", "get_ast_range", "get_function_body", "find_references", "get_symbol_definition"]
             return self.registry.get_schemas(names)
         elif step.action == "verify":
             return self.registry.get_schemas(["run_command", "read_file", "glob_files"])

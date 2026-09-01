@@ -268,6 +268,7 @@ class ModelProfile:
     # reasoning off entirely. None = defer to the model's native default.
     reasoning_effort: str | None = None
     reasoning_enabled: bool | None = None
+    supports_vision: bool | None = None
 
 
 @dataclass

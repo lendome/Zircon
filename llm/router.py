@@ -98,6 +98,35 @@ class ModelRouter:
                 result.append(p)
         return result
 
+    @staticmethod
+    def _supports_vision(profile: ModelProfile) -> bool:
+        if profile.supports_vision is not None:
+            return profile.supports_vision
+        model = profile.model.lower()
+        return any(marker in model for marker in (
+            "gpt-4o", "gpt-4.1", "gpt-5", "claude-3", "claude-sonnet-4",
+            "claude-opus-4", "gemini", "qwen-vl", "qwen2.5-vl", "pixtral",
+            "llava", "mistral-small-3.1", "mistral-medium-3.1",
+        ))
+
+    @property
+    def has_vision_profile(self) -> bool:
+        return any(self._supports_vision(profile) for profile in self._profiles.values())
+
+    def role_supports_vision(self, role: str) -> bool:
+        return any(self._supports_vision(profile) for profile in self.select(role))
+
+    @staticmethod
+    def _has_image_content(messages: list[dict]) -> bool:
+        for message in messages:
+            content = message.get("content") if isinstance(message, dict) else None
+            if isinstance(content, list) and any(
+                isinstance(part, dict) and part.get("type") in ("image_url", "input_image", "image")
+                for part in content
+            ):
+                return True
+        return False
+
     def set_role_profile(self, role: str, profile_name: str) -> None:
         """Make a profile the first candidate for a role at runtime."""
         if profile_name not in self._profiles:
@@ -148,6 +177,10 @@ class ModelRouter:
         tool_choice: Any = None,
     ) -> LLMResponse:
         candidates = self.select(role)
+        if self._has_image_content(messages):
+            candidates = [profile for profile in candidates if self._supports_vision(profile)]
+            if not candidates:
+                raise RuntimeError(f"No vision-compatible model is configured for role '{role}'")
         last_error: Exception | None = None
         logger.debug("generate(role=%s, candidates=[%s], msgs=%d)", role,
                       ", ".join(p.name for p in candidates), len(messages))
@@ -222,6 +255,10 @@ class ModelRouter:
         progress_callback=None,
     ) -> AsyncIterator[StreamChunk]:
         candidates = self.select(role)
+        if self._has_image_content(messages):
+            candidates = [profile for profile in candidates if self._supports_vision(profile)]
+            if not candidates:
+                raise RuntimeError(f"No vision-compatible model is configured for role '{role}'")
         last_error: Exception | None = None
         attempts = self._retry_attempts(self.config.max_retries)
         for profile in candidates:

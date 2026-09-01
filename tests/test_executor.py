@@ -5,6 +5,7 @@ from zirconAgent.core.executor import Executor
 from zirconAgent.core.types import LLMResponse, ToolCall
 from zirconAgent.tools.registry import ToolRegistry
 from zirconAgent.tools.file_ops import ReadFileTool, CreateFileTool
+from zirconAgent.tools.image_ops import ViewImageTool
 from zirconAgent.tests.mocks import make_router, tool_response, tool_call_response
 
 
@@ -74,6 +75,40 @@ class TestExecutorBasicLoop:
         )
         assert result.success
         assert result.tool_calls_made == 1
+
+    @pytest.mark.asyncio
+    async def test_view_image_is_injected_into_next_model_request(self, tmp_path):
+        (tmp_path / "screen.png").write_bytes(b"\x89PNG\r\n\x1a\nimage-data")
+        reg = ToolRegistry()
+        reg.register(ViewImageTool(str(tmp_path)))
+        router = make_router()
+        router._profiles["default"].supports_vision = True
+        router.generate = AsyncMock(side_effect=[
+            tool_call_response([("view_image", {"source": "screen.png"})]),
+            tool_response("The screenshot shows the app."),
+        ])
+        executor = Executor(router, reg)
+
+        result = await executor.run_tool_loop(
+            messages=[{"role": "user", "content": "inspect screen.png"}],
+            tools=reg.get_schemas(),
+        )
+
+        assert result.success
+        second_messages = router.generate.await_args_list[1].kwargs["messages"]
+        assert second_messages[-2]["role"] == "tool"
+        assert isinstance(second_messages[-2]["content"], str)
+        assert second_messages[-1]["role"] == "user"
+        assert second_messages[-1]["content"][1]["type"] == "image_url"
+
+    def test_view_image_schema_hidden_for_text_only_role(self, tmp_path):
+        reg = ToolRegistry()
+        reg.register(ViewImageTool(str(tmp_path)))
+        router = make_router()
+        router._profiles["default"].supports_vision = False
+        executor = Executor(router, reg)
+
+        assert executor._apply_tool_gates(reg.get_schemas()) == []
 
     @pytest.mark.asyncio
     async def test_multi_tool_call_sequence(self, tmp_path):

@@ -1,5 +1,6 @@
 import pytest
 import asyncio
+import time
 
 from zirconAgent.tools.shell_ops import (
     ProcessManager,
@@ -114,9 +115,27 @@ class TestShellBackgroundTools:
     @pytest.mark.asyncio
     async def test_shell_start_exited_quickly(self, tmp_path, pm):
         start_tool = ShellStartTool(str(tmp_path), pm)
+        started = time.monotonic()
         result = await start_tool.run(command="echo quick", initial_wait=2)
+        elapsed = time.monotonic() - started
         assert "bg_" in result
-        assert "EXITED" in result or "RUNNING" in result
+        assert "EXITED" in result
+        assert elapsed < 1.5
+
+    @pytest.mark.asyncio
+    async def test_shell_poll_returns_when_process_exits(self, tmp_path, pm):
+        pid, _ = await pm.start(
+            "python -c \"import time; time.sleep(0.2)\"",
+            str(tmp_path),
+            initial_wait=0,
+        )
+
+        started = time.monotonic()
+        result = await ShellPollTool(pm).run(pid=pid, wait=3)
+        elapsed = time.monotonic() - started
+
+        assert "EXITED (0)" in result
+        assert elapsed < 1.5
 
     @pytest.mark.asyncio
     async def test_shell_poll_missing_pid(self, pm):
