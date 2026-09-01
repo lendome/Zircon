@@ -172,9 +172,15 @@ class CommandPalette:
         if not self._visible:
             return RichText("")
 
+        # The injected theme is a reactive signal (Signal/_Computed[Theme]);
+        # resolve it at render time so dark/light mode switches are honored.
+        theme = self.theme
+        if theme is not None and hasattr(theme, "get"):
+            theme = theme.get()
+
         border_style = "cyan"
-        if self.theme is not None:
-            border_style = self.theme.border_active.to_rich()
+        if theme is not None:
+            border_style = theme.border_active.to_rich()
 
         table = Table(show_header=True, header_style="dim", show_lines=False, padding=(0, 1))
         table.add_column("Title", no_wrap=True)
@@ -198,8 +204,8 @@ class CommandPalette:
                 current_category = opt.category
 
             row_style = ""
-            if is_selected and self.theme is not None:
-                row_style = f"on {self.theme.background_element.to_rich()}"
+            if is_selected and theme is not None:
+                row_style = f"on {theme.background_element.to_rich()}"
 
             table.add_row(
                 RichText(f"{prefix}{opt.title}", style=style),
