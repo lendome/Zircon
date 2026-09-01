@@ -48,7 +48,7 @@ def _profiles(catalog: dict | None = None) -> list[dict]:
 
 
 def _roles() -> list[str]:
-    return ["default", "chat", "editor", "planner", "advisor"]
+    return ["default", "chat", "editor", "planner", "architect", "advisor"]
 
 
 class TestSelectedProfile:
@@ -114,3 +114,86 @@ class TestFullFlow:
         asyncio.run(ChatComponent._handle_model_picker_key(comp, "return"))
         asyncio.run(ChatComponent._handle_model_picker_key(comp, "backspace"))
         assert picker.stage == "role"
+
+
+class TestTypeToSearch:
+    """Typing filters the visible list at every stage (no arrowing required)."""
+
+    def _component(self, catalog: dict) -> tuple[ChatComponent, AsyncMock]:
+        comp, transport = TestFullFlow._component(self, catalog)
+        return comp, transport
+
+    def test_typing_filters_role_list(self):
+        comp, _ = self._component({"default": ["z-ai/glm-5.3"]})
+        asyncio.run(ChatComponent._show_model_picker(comp, _Theme(), data=comp._transport.list_models.return_value))
+        picker = comp._model_picker
+        for ch in "arch":
+            asyncio.run(ChatComponent._handle_model_picker_key(comp, ch))
+        assert picker.options == ["architect"], picker.options
+        asyncio.run(ChatComponent._handle_model_picker_key(comp, "return"))
+        assert picker.selected_role == "architect"
+        assert picker.stage == "profile"
+
+    def test_typing_filters_profiles_by_model_and_id(self):
+        comp, _ = self._component({"default": ["z-ai/glm-5.3"]})
+        asyncio.run(ChatComponent._show_model_picker(comp, _Theme(), data=comp._transport.list_models.return_value))
+        picker = comp._model_picker
+        asyncio.run(ChatComponent._handle_model_picker_key(comp, "return"))  # role -> profile
+        for ch in "cha":
+            asyncio.run(ChatComponent._handle_model_picker_key(comp, ch))
+        assert picker.options == [picker.profiles[1]], picker.options
+        asyncio.run(ChatComponent._handle_model_picker_key(comp, "return"))
+        assert picker.selected_profile_id == "chat"
+        assert picker.stage == "catalog"
+
+    def test_typing_filters_catalog_and_enter_assigns_match(self):
+        comp, transport = self._component({"default": ["openai/gpt-4o", "z-ai/glm-5.3"]})
+        asyncio.run(ChatComponent._show_model_picker(comp, _Theme(), data=transport.list_models.return_value))
+        picker = comp._model_picker
+        asyncio.run(ChatComponent._handle_model_picker_key(comp, "return"))
+        asyncio.run(ChatComponent._handle_model_picker_key(comp, "return"))
+        for ch in "gpt":
+            asyncio.run(ChatComponent._handle_model_picker_key(comp, ch))
+        assert picker.options == ["openai/gpt-4o"], picker.options
+        assert picker.selected_model == "openai/gpt-4o"
+        asyncio.run(ChatComponent._handle_model_picker_key(comp, "return"))
+        transport.set_model.assert_awaited_once_with("default", "default", "openai/gpt-4o")
+
+    def test_no_match_typed_text_is_custom_id(self):
+        """Filtering takes precedence; zero matches means the query IS the model ID."""
+        comp, transport = self._component({"default": ["z-ai/glm-5.3"]})
+        asyncio.run(ChatComponent._show_model_picker(comp, _Theme(), data=transport.list_models.return_value))
+        picker = comp._model_picker
+        asyncio.run(ChatComponent._handle_model_picker_key(comp, "return"))
+        asyncio.run(ChatComponent._handle_model_picker_key(comp, "return"))
+        for ch in "o/l/m-4":
+            asyncio.run(ChatComponent._handle_model_picker_key(comp, ch))
+        assert picker.options == []
+        assert picker.selected_model == "o/l/m-4"
+        asyncio.run(ChatComponent._handle_model_picker_key(comp, "return"))
+        transport.set_model.assert_awaited_once_with("default", "default", "o/l/m-4")
+
+    def test_backspace_edits_query_before_navigating_back(self):
+        comp, _ = self._component({"default": ["z-ai/glm-5.3"]})
+        asyncio.run(ChatComponent._show_model_picker(comp, _Theme(), data=comp._transport.list_models.return_value))
+        picker = comp._model_picker
+        for ch in "zz":
+            asyncio.run(ChatComponent._handle_model_picker_key(comp, ch))
+        asyncio.run(ChatComponent._handle_model_picker_key(comp, "backspace"))
+        assert picker._text_buf == "z"
+        assert picker.stage == "role", "backspace must edit the query, not exit the stage"
+        asyncio.run(ChatComponent._handle_model_picker_key(comp, "backspace"))
+        assert picker._text_buf == ""
+        asyncio.run(ChatComponent._handle_model_picker_key(comp, "backspace"))
+        # query empty now: but we are at role stage (top), so stay put
+        assert picker.stage == "role"
+
+    def test_enter_with_no_matches_does_not_crash(self):
+        comp, _ = self._component({"default": ["z-ai/glm-5.3"]})
+        asyncio.run(ChatComponent._show_model_picker(comp, _Theme(), data=comp._transport.list_models.return_value))
+        picker = comp._model_picker
+        for ch in "zzz":
+            asyncio.run(ChatComponent._handle_model_picker_key(comp, ch))
+        assert picker.options == []
+        asyncio.run(ChatComponent._handle_model_picker_key(comp, "return"))
+        assert picker.stage == "role", "no crash, stage unchanged"

@@ -198,18 +198,33 @@ class _ModelPicker:
         self._text_buf = ""
         self._fetching = False
 
+    def _matches(self, option: Any) -> bool:
+        """Case-insensitive substring match against the typed query."""
+        query = self._text_buf.lower()
+        if not query:
+            return True
+        if self.stage == "profile":
+            haystack = f"{option.get('id', '')} {option.get('model', '')}".lower()
+        else:
+            haystack = str(option).lower()
+        return query in haystack
+
     @property
     def options(self) -> list[Any]:
         if self.stage == "role":
-            return self.roles
+            return [r for r in self.roles if self._matches(r)]
         if self.stage == "profile":
-            return self.profiles
+            return [p for p in self.profiles if self._matches(p)]
         profile = next((item for item in self.profiles if item.get("id") == self.selected_profile_id), None)
         models = list(profile.get("available_models", [])) if profile else []
         current = profile.get("model", "") if profile else ""
         if current and current not in models:
             models.insert(0, current)
-        return models
+        return [m for m in models if self._matches(m)]
+
+    def _reset_query(self) -> None:
+        self._text_buf = ""
+        self.index = 0
 
     @property
     def selected_profile(self) -> dict[str, Any] | None:
@@ -221,33 +236,36 @@ class _ModelPicker:
     @property
     def selected_model(self) -> str:
         if self.stage == "catalog":
-            if self._text_buf:
-                return self._text_buf
             opts = self.options
-            return str(opts[self.index]) if opts else ""
+            if opts:
+                return str(opts[self.index])
+            return self._text_buf  # no matches: typed text is a custom model ID
         profile = self.selected_profile
         return str(profile.get("model", "")) if profile else ""
 
     def move(self, direction: int) -> None:
-        if self.stage == "catalog":
-            self._text_buf = ""
-        if self.options:
-            self.index = (self.index + direction) % len(self.options)
+        opts = self.options
+        if opts:
+            self.index = (self.index + direction) % len(opts)
 
     def type_char(self, ch: str) -> None:
-        if self.stage == "catalog":
-            self._text_buf += ch
+        self._text_buf += ch
+        opts = self.options
+        if opts and self.index >= len(opts):
+            self.index = len(opts) - 1
 
     def backspace_text(self) -> bool:
-        if self.stage == "catalog" and self._text_buf:
+        if self._text_buf:
             self._text_buf = self._text_buf[:-1]
+            if self.index >= max(1, len(self.options)):
+                self.index = 0
             return True
         return False
 
     def select_role(self) -> None:
         self.selected_role = str(self.options[self.index])
         self.stage = "profile"
-        self.index = 0
+        self._reset_query()
 
     def open_role(self, role: str) -> None:
         """Skip role selection when `/models <role>` was requested."""
@@ -255,7 +273,7 @@ class _ModelPicker:
             return
         self.selected_role = role
         self.stage = "profile"
-        self.index = 0
+        self._reset_query()
 
     def select_profile(self) -> None:
         profile = self.selected_profile
@@ -294,11 +312,11 @@ class _ModelPicker:
             title = f"Models: {self.selected_role} @ {provider}"
 
         if self.stage == "role":
-            subtitle = "Enter select | Esc cancel"
+            subtitle = "Type to search | Enter select | Esc cancel"
         elif self.stage == "profile":
-            subtitle = "Enter profile | Backspace roles | Esc cancel"
+            subtitle = "Type to search | Enter profile | Backspace roles | Esc cancel"
         else:
-            subtitle = "Enter assign (or type custom ID) | Backspace profiles | Esc cancel"
+            subtitle = "Type to search (or a custom ID) | Enter assign | Backspace profiles | Esc cancel"
 
         lines = [Text(subtitle, style=f"dim {self.theme.text_muted.to_rich()}")]
 
@@ -319,17 +337,21 @@ class _ModelPicker:
                 label = str(option)
             lines.append(Text(marker + label, style=style))
 
-        if self.stage == "catalog":
-            if self._text_buf:
-                lines.append(Text(
-                    f"  > {self._text_buf}\u2588",
-                    style=f"bold {self.theme.warning.to_rich()}",
-                ))
-            else:
-                lines.append(Text(
-                    "  [type a custom model ID...]",
-                    style=f"dim {self.theme.text_muted.to_rich()}",
-                ))
+        if self._text_buf:
+            total = len(self.roles) if self.stage == "role" else (
+                len(self.profiles) if self.stage == "profile"
+                else len(self.options)
+            )
+            shown = len(self.options)
+            lines.append(Text(
+                f"  search: {self._text_buf}\u2588  ({shown}/{total})",
+                style=f"bold {self.theme.warning.to_rich()}",
+            ))
+        elif self.stage == "catalog":
+            lines.append(Text(
+                "  [type to search, or a custom model ID...]",
+                style=f"dim {self.theme.text_muted.to_rich()}",
+            ))
 
         return Panel(Group(*lines), title=title, border_style=self.theme.border_active.to_rich())
 
@@ -2296,20 +2318,21 @@ class ChatComponent:
         elif key in {"down", "ctrl+n"}:
             picker.move(1)
         elif key in {"backspace", "left"}:
-            if picker.stage == "catalog":
-                if picker.backspace_text():
-                    pass
-                else:
-                    picker.stage = "profile"
-                    picker.index = 0
+            if picker.backspace_text():
+                pass  # editing the search query
+            elif picker.stage == "catalog":
+                picker.stage = "profile"
+                picker._reset_query()
             elif picker.stage == "profile":
                 picker.stage = "role"
-                picker.index = 0
+                picker._reset_query()
         elif key in {"return", "tab", "right"}:
             if picker.stage == "role":
-                picker.select_role()
+                if picker.options:
+                    picker.select_role()
             elif picker.stage == "profile":
-                picker.select_profile()
+                if picker.options:
+                    picker.select_profile()
                 if picker._fetching:
                     self._render()
                     data = await self._transport.list_models(refresh=True)
@@ -2345,7 +2368,7 @@ class ChatComponent:
                             self._update_footer()
                         else:
                             self._toast_mgr.warning(result.get("error", "Could not save model"))
-        elif is_printable(key) and picker.stage == "catalog":
+        elif is_printable(key):
             picker.type_char(key)
         self._render()
 
