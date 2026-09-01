@@ -37,9 +37,31 @@ class AutocompleteState:
     anchor_x: int = 0
     anchor_y: int = 0
     anchor_width: int = 0
+    visible_start: int = 0
 
 
-class Autocomplete:
+class AutocompleteViewportMixin:
+    """Shared palette-style viewport scrolling for option lists.
+
+    Both the command palette and this autocomplete dropdown keep the
+    selection inside a fixed-size rendered window; this mixin holds the
+    single implementation so the two widgets scroll identically.
+    """
+
+    max_visible_options: int = 10
+
+    def _viewport_slice(self, total: int, selected: int, visible_start: int) -> tuple[int, int]:
+        """Return the (start, end) window that keeps `selected` in view."""
+        max_start = max(0, total - self.max_visible_options)
+        if selected < visible_start:
+            visible_start = selected
+        elif selected >= visible_start + self.max_visible_options:
+            visible_start = selected - self.max_visible_options + 1
+        visible_start = min(visible_start, max_start)
+        return visible_start, min(total, visible_start + self.max_visible_options)
+
+
+class Autocomplete(AutocompleteViewportMixin):
     """
     Main autocomplete manager.
 
@@ -51,6 +73,8 @@ class Autocomplete:
 
     When visible, pushes "autocomplete" mode on the keymap stack.
     """
+
+    max_visible_options = 8
 
     def __init__(
         self,
@@ -117,6 +141,7 @@ class Autocomplete:
         self._state.visible = False
         self._state.options = []
         self._state.selected = 0
+        self._state.visible_start = 0
         self._state.trigger = TriggerType.NONE
         self._state_signal.set(False)
 
@@ -124,11 +149,42 @@ class Autocomplete:
         if self._state.options:
             self._state.selected = max(0, self._state.selected - 1)
             self._state.input_mode = "keyboard"
+            self._ensure_selection_visible()
 
     def move_down(self) -> None:
         if self._state.options:
             self._state.selected = min(len(self._state.options) - 1, self._state.selected + 1)
             self._state.input_mode = "keyboard"
+            self._ensure_selection_visible()
+
+    def page_up(self) -> None:
+        if self._state.options:
+            self._state.selected = max(0, self._state.selected - self.max_visible_options)
+            self._state.input_mode = "keyboard"
+            self._ensure_selection_visible()
+
+    def page_down(self) -> None:
+        if self._state.options:
+            self._state.selected = min(
+                len(self._state.options) - 1,
+                self._state.selected + self.max_visible_options,
+            )
+            self._state.input_mode = "keyboard"
+            self._ensure_selection_visible()
+
+    def _ensure_selection_visible(self) -> None:
+        """Keep the selected option inside the rendered viewport (palette logic)."""
+        start, _end = self._viewport_slice(
+            len(self._state.options), self._state.selected, self._state.visible_start
+        )
+        self._state.visible_start = start
+
+    @property
+    def visible_window(self) -> tuple[int, int]:
+        """(start, end) slice of options the renderer should draw."""
+        return self._viewport_slice(
+            len(self._state.options), self._state.selected, self._state.visible_start
+        )
 
     def select(self) -> bool:
         """Execute the selected option."""
@@ -190,6 +246,7 @@ class Autocomplete:
 
         self._state.options = options
         self._state.selected = 0
+        self._state.visible_start = 0
         self._state.input_mode = "keyboard"
 
     def _filter_slash(self, query: str) -> None:
@@ -211,6 +268,7 @@ class Autocomplete:
         scored.sort(key=lambda x: x[1], reverse=True)
         self._state.options = [o for o, _ in scored[:20]]
         self._state.selected = 0
+        self._state.visible_start = 0
         self._state.input_mode = "keyboard"
 
     @property
@@ -222,4 +280,4 @@ class Autocomplete:
     @property
     def height(self) -> int:
         count = len(self._state.options)
-        return min(10, max(1, count))
+        return min(self.max_visible_options, max(1, count))

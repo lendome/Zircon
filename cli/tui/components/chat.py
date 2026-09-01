@@ -1468,11 +1468,18 @@ class ChatComponent:
         dim_style = theme.text_muted.to_rich()
         bg_style = theme.background_element.to_rich()
 
-        # Header line
-        self.console.print(Text(f"  {trigger_char} autocomplete", style=f"dim {dim_style}"))
+        # Header line — show position counter and more-above/below hints
+        total = len(state.options)
+        start, end = self._autocomplete.visible_window
+        header = f"  {trigger_char} autocomplete  {state.selected + 1}/{total}"
+        if start > 0:
+            header += "  ↑ more"
+        if end < total:
+            header += "  ↓ more"
+        self.console.print(Text(header, style=f"dim {dim_style}"))
 
-        # Options — one per line, max 8
-        for i, opt in enumerate(state.options[:8]):
+        # Options — one per line, viewport window follows the selection
+        for i, opt in enumerate(state.options[start:end], start=start):
             is_sel = i == state.selected
             marker = "> " if is_sel else "  "
             if is_sel:
@@ -1527,6 +1534,14 @@ class ChatComponent:
             return True
         if key in ("down", "ctrl+n"):
             self._autocomplete.move_down()
+            self._render()
+            return True
+        if key in ("pageup", "ctrl+pageup"):
+            self._autocomplete.page_up()
+            self._render()
+            return True
+        if key in ("pagedown", "ctrl+pagedown"):
+            self._autocomplete.page_down()
             self._render()
             return True
         # If it's a printable char or backspace, fall through to normal editing
