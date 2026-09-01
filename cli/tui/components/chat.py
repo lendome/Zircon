@@ -1171,6 +1171,9 @@ class ChatComponent:
         if self._checkpoint_picker is not None:
             render_console.print(self._checkpoint_picker.render())
 
+        if self._palette.is_visible:
+            render_console.print(self._palette.render())
+
         # Emit the frame as ONE write: move to the top of the previous
         # region, erase, and repaint — wrapped in a synchronized-output
         # block (DEC 2026) so supporting terminals commit it atomically.

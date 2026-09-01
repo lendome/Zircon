@@ -112,6 +112,16 @@ echo "%%PYTHON%%" "%%PROJECT_ROOT%%\__main__.py" "%%CD%%"
 echo exit /b %%errorlevel%%
 ) > "%LAUNCHER%"
 
+rem Register the launcher with Explorer's ShellExecute lookup so typing
+rem "zircon" in the address bar can start it without relying on PATH refresh.
+set "APP_PATH_KEY=HKCU\Software\Microsoft\Windows\CurrentVersion\App Paths\zircon.exe"
+reg add "%APP_PATH_KEY%" /ve /d "%LAUNCHER%" /f >nul 2>&1
+if errorlevel 1 (
+    echo [WARN] Could not register Zircon for the Explorer address bar.
+) else (
+    reg add "%APP_PATH_KEY%" /v Path /d "%INSTALL_DIR%" /f >nul 2>&1
+)
+
 set "USER_PATH="
 for /f "skip=2 tokens=2*" %%A in ('reg query HKCU\Environment /v PATH 2^>nul') do set "USER_PATH=%%B"
 echo ;!USER_PATH!; | find /i ";%INSTALL_DIR%;" >nul 2>&1
@@ -125,6 +135,7 @@ if errorlevel 1 (
 
 echo.
 echo Zircon installed at "%LAUNCHER%".
+echo Type zircon in a new Explorer address bar to open Zircon.
 echo Opening Zircon in a new terminal...
 start "Zircon" cmd /k ""%LAUNCHER%" "%ZIRCON_INSTALL_WORKSPACE%""
 exit /b 0

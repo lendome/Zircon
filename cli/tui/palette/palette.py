@@ -45,6 +45,8 @@ class CommandPalette:
     Fuzzy search filters the list as the user types.
     """
 
+    _MAX_VISIBLE_OPTIONS = 10
+
     def __init__(
         self,
         registry: CommandRegistry,
@@ -54,6 +56,7 @@ class CommandPalette:
         self.theme = theme
         self._filter: str = ""
         self._selected_index: int = 0
+        self._visible_start: int = 0
         self._visible: bool = False
         self._options: list[PaletteOption] = []
 
@@ -69,6 +72,7 @@ class CommandPalette:
         self._visible = True
         self._filter = ""
         self._selected_index = 0
+        self._visible_start = 0
         self._rebuild_options()
 
     def hide(self) -> None:
@@ -85,15 +89,27 @@ class CommandPalette:
     def set_filter(self, text: str) -> None:
         self._filter = text
         self._selected_index = 0
+        self._visible_start = 0
         self._rebuild_options()
 
     def move_up(self) -> None:
         if self._options:
             self._selected_index = max(0, self._selected_index - 1)
+            self._ensure_selection_visible()
 
     def move_down(self) -> None:
         if self._options:
             self._selected_index = min(len(self._options) - 1, self._selected_index + 1)
+            self._ensure_selection_visible()
+
+    def _ensure_selection_visible(self) -> None:
+        """Keep the selected option inside the rendered viewport."""
+        max_start = max(0, len(self._options) - self._MAX_VISIBLE_OPTIONS)
+        if self._selected_index < self._visible_start:
+            self._visible_start = self._selected_index
+        elif self._selected_index >= self._visible_start + self._MAX_VISIBLE_OPTIONS:
+            self._visible_start = self._selected_index - self._MAX_VISIBLE_OPTIONS + 1
+        self._visible_start = min(self._visible_start, max_start)
 
     def select(self) -> bool:
         """Execute the selected command. Returns True if a command was run."""
@@ -166,7 +182,13 @@ class CommandPalette:
         table.add_column("Shortcut", style="dim", no_wrap=True, width=10)
 
         current_category: str | None = None
-        for i, opt in enumerate(self._options):
+        self._ensure_selection_visible()
+        visible_end = min(
+            len(self._options),
+            self._visible_start + self._MAX_VISIBLE_OPTIONS,
+        )
+        for i in range(self._visible_start, visible_end):
+            opt = self._options[i]
             is_selected = i == self._selected_index
             prefix = "> " if is_selected else "  "
             style = "bold" if is_selected else ""
