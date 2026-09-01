@@ -58,7 +58,12 @@ from .prompt.footer import PromptFooter
 from .plugins.api import create_tui_api
 from .autocomplete.autocomplete import Autocomplete
 from .autocomplete.file_search import AsyncFileSearch
-from .platform.platform import detect_terminal_environment, restore_win32_console_mode, flush_win32_input_buffer
+from .platform.platform import (
+    detect_terminal_environment,
+    restore_win32_console_mode,
+    flush_win32_input_buffer,
+    enable_win32_vt_output,
+)
 from .platform.sighup import SighupHandler
 from .startup.scope import ScopedLifecycle
 from .startup.epilogue import EpilogueManager
@@ -241,8 +246,16 @@ async def run_tui(transport: Any, workspace: str, cli_args: dict[str, Any] | Non
     # Platform setup — detect environment and ensure console is usable
     try:
         # On Windows, ensure the console has proper input mode (recover
-        # from prior broken exits that left mode at 0x0000)
+        # from prior broken exits that left mode at 0x0000) and that the
+        # OUTPUT handle processes VT sequences — classic conhost (e.g.
+        # Windows PowerShell 5.1) ships without ENABLE_VIRTUAL_TERMINAL_
+        # PROCESSING, so without this every escape the renderer emits
+        # prints literally and the whole UI breaks.
         if sys.platform == "win32":
+            try:
+                enable_win32_vt_output()
+            except Exception:
+                pass
             try:
                 import ctypes
                 kernel32 = ctypes.windll.kernel32

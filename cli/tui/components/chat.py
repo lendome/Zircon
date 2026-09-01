@@ -50,6 +50,7 @@ from ..autocomplete.file_search import AsyncFileSearch
 from ..palette.palette import CommandPalette
 from ..palette.registry import CommandRegistry
 from ..dialogs.toast import ToastManager, ToastVariant
+from ..platform.platform import enable_win32_vt_output
 from ..input.key_reader import (
     RawTerminal,
     _read_key_batch,
@@ -1089,6 +1090,16 @@ class ChatComponent:
 
         if self._defer_render:
             return
+
+        # Child processes (shell tools, external editors) share the console
+        # buffer and some leave stdout without the VT-processing bit —
+        # one frame of literal escapes corrupts the whole screen, so
+        # re-assert it before every repaint. Two ctypes syscalls, cheap.
+        if sys.platform == "win32":
+            try:
+                enable_win32_vt_output()
+            except Exception:
+                pass
 
         theme = self._theme_signal.get()
 

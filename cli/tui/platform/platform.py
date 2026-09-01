@@ -78,6 +78,68 @@ def is_linux() -> bool:
 
 
 _saved_console_mode: int | None = None
+_saved_output_mode: int | None = None
+
+# ENABLE_VIRTUAL_TERMINAL_PROCESSING — makes conhost interpret ANSI/VT
+# escape sequences instead of printing them literally. Windows Terminal
+# has this on by default; classic conhost (e.g. Windows PowerShell 5.1)
+# does NOT, so the renderer must enable it explicitly.
+ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+
+
+def enable_win32_vt_output() -> bool:
+    """Enable VT escape processing on the stdout console handle.
+
+    Saves the original output mode so restore_win32_console_mode() can put
+    it back on exit. Returns True if the console accepts VT sequences
+    (either enabled here or already a VT-capable terminal), False if the
+    console is a legacy one that refuses — in which case rendering must
+    degrade rather than spew raw escapes.
+
+    Idempotent: safe to call repeatedly (e.g. after subprocesses mutate
+    the shared console mode). On the first call the original mode is
+    captured; later calls only re-apply the VT bit.
+    """
+    global _saved_output_mode
+    if not is_windows():
+        return True
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        STD_OUTPUT_HANDLE = -11
+        handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+        if not handle:
+            return False
+        mode = ctypes.c_ulong()
+        if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            # Not a real console (piped/redirected output): escapes are
+            # consumed by whatever reads the pipe, nothing to enable.
+            return True
+        if _saved_output_mode is None:
+            _saved_output_mode = mode.value
+        desired = mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING
+        if desired != mode.value and not kernel32.SetConsoleMode(handle, ctypes.c_ulong(desired)):
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def win32_vt_output_supported() -> bool:
+    """True if the stdout console already processes VT sequences."""
+    if not is_windows():
+        return True
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        STD_OUTPUT_HANDLE = -11
+        handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+        mode = ctypes.c_ulong()
+        if not handle or not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            return True  # piped — not a conhost rendering problem
+        return bool(mode.value & ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+    except Exception:
+        return False
 
 
 def disable_win32_processed_input() -> None:
@@ -109,19 +171,30 @@ def disable_win32_processed_input() -> None:
 
 
 def restore_win32_console_mode() -> None:
-    """Restore the original Windows console mode saved before modification."""
-    global _saved_console_mode
-    if not is_windows() or _saved_console_mode is None:
+    """Restore the original Windows console modes saved before modification."""
+    global _saved_console_mode, _saved_output_mode
+    if not is_windows():
         return
     try:
         import ctypes
         kernel32 = ctypes.windll.kernel32
-        STD_INPUT_HANDLE = -10
-        handle = kernel32.GetStdHandle(STD_INPUT_HANDLE)
-        kernel32.SetConsoleMode(handle, ctypes.c_ulong(_saved_console_mode))
+        if _saved_console_mode is not None:
+            STD_INPUT_HANDLE = -10
+            handle = kernel32.GetStdHandle(STD_INPUT_HANDLE)
+            kernel32.SetConsoleMode(handle, ctypes.c_ulong(_saved_console_mode))
     except Exception:
         pass
     _saved_console_mode = None
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        if _saved_output_mode is not None:
+            STD_OUTPUT_HANDLE = -11
+            handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+            kernel32.SetConsoleMode(handle, ctypes.c_ulong(_saved_output_mode))
+    except Exception:
+        pass
+    _saved_output_mode = None
 
 
 def flush_win32_input_buffer() -> None:

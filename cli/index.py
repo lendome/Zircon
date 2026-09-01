@@ -22,6 +22,32 @@ from .runtime import Runtime, RuntimeContext
 from .spec import build_root_spec
 
 
+def _enable_windows_ansi() -> None:
+    """Enable VT processing on stdout before anything renders.
+
+    Classic conhost (Windows PowerShell 5.1, plain cmd) ships with
+    ENABLE_VIRTUAL_TERMINAL_PROCESSING off, so every ANSI escape would
+    print literally. Windows Terminal/VS Code already have it on and this
+    is a no-op there. Mirrors enable_win32_vt_output() in
+    cli/tui/platform/platform.py — inlined here to avoid pulling the whole
+    TUI package into the thin entry point before onboarding renders.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        mode = ctypes.c_ulong()
+        if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            desired = mode.value | 0x0004  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            if desired != mode.value:
+                kernel32.SetConsoleMode(handle, ctypes.c_ulong(desired))
+    except Exception:
+        pass
+
+
 def _ensure_imports() -> None:
     """Make zirconAgent importable as a package from handler modules."""
     here = Path(__file__).resolve().parent  # .../zirconAgent/cli
@@ -43,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     dispatches. Handlers are async — we run them on a single event loop.
     """
     _ensure_imports()
+    _enable_windows_ansi()
 
     raw_args = list(argv if argv is not None else sys.argv[1:])
 
