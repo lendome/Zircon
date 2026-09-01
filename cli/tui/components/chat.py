@@ -1135,7 +1135,7 @@ class ChatComponent:
         self._append_input_text(prompt_line, text, cursor, theme)
         render_console.print(prompt_line)
 
-        # Render autocomplete if visible
+        # Render autocomplete if visible (viewport follows the selection)
         if self._autocomplete.is_visible:
             state = self._autocomplete.state
             if state.options:
@@ -1143,8 +1143,15 @@ class ChatComponent:
                 dim_style = theme.text_muted.to_rich()
                 bg_style = theme.background_element.to_rich()
                 trigger_char = "@" if state.trigger.value == "@" else "/"
-                render_console.print(Text(f"  {trigger_char} autocomplete", style=f"dim {dim_style}"))
-                for i, opt in enumerate(state.options[:8]):
+                total = len(state.options)
+                vstart, vend = self._autocomplete.visible_window
+                header = f"  {trigger_char} autocomplete  {state.selected + 1}/{total}"
+                if vstart > 0:
+                    header += "  ↑ more"
+                if vend < total:
+                    header += "  ↓ more"
+                render_console.print(Text(header, style=f"dim {dim_style}"))
+                for i, opt in enumerate(state.options[vstart:vend], start=vstart):
                     is_sel = i == state.selected
                     marker = "> " if is_sel else "  "
                     if is_sel:
@@ -1457,42 +1464,6 @@ class ChatComponent:
             pass
         return 1
 
-    def _render_autocomplete(self, theme: Theme) -> None:
-        """Render the autocomplete dropdown as simple lines (no panel border)."""
-        state = self._autocomplete.state
-        if not state.options:
-            return
-
-        trigger_char = "@" if state.trigger.value == "file" else "/"
-        sel_style = theme.primary.to_rich()
-        dim_style = theme.text_muted.to_rich()
-        bg_style = theme.background_element.to_rich()
-
-        # Header line — show position counter and more-above/below hints
-        total = len(state.options)
-        start, end = self._autocomplete.visible_window
-        header = f"  {trigger_char} autocomplete  {state.selected + 1}/{total}"
-        if start > 0:
-            header += "  ↑ more"
-        if end < total:
-            header += "  ↓ more"
-        self.console.print(Text(header, style=f"dim {dim_style}"))
-
-        # Options — one per line, viewport window follows the selection
-        for i, opt in enumerate(state.options[start:end], start=start):
-            is_sel = i == state.selected
-            marker = "> " if is_sel else "  "
-            if is_sel:
-                line = Text()
-                line.append(marker, style=f"bold {sel_style}")
-                line.append(opt.display, style=f"bold {sel_style} on {bg_style}")
-                line.append(f"  {opt.category}", style=f"dim {dim_style} on {bg_style}")
-            else:
-                line = Text()
-                line.append(marker, style=dim_style)
-                line.append(opt.display)
-                line.append(f"  {opt.category}", style=f"dim {dim_style}")
-            self.console.print(line)
 
     async def _check_autocomplete(self) -> None:
         """Check if autocomplete should trigger after text change."""
